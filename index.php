@@ -324,7 +324,7 @@ class Api {
 			}
 			
 			$result = array(
-				'info' => '',
+				'info' => $mysqli->info,
 				'fields' => [],
 				'error' => null,
 				'rows' => [],
@@ -332,10 +332,7 @@ class Api {
 				'safeCut' => false,
 			);
 			
-			if ($success) {
-				if (!$mysqliResult = $mysqli->use_result()) {
-					continue;
-				}
+			if ($success && $mysqliResult = $mysqli->use_result()) {
 				$result['fields'] = $mysqliResult->fetch_fields();
 				foreach ($result['fields'] as $field) {
 					// var_dump($field); die;
@@ -352,7 +349,7 @@ class Api {
 					$result['info'] = $mysqli->info;
 				}
 			}
-			else {
+			elseif ($mysqli->error) {
 				$result['error'] = (new MyError('MYSQL_ERROR', $mysqli->error))->describe();
 			}
 			$resultset[] = $result;
@@ -826,15 +823,17 @@ function executeQuery(sql) {
 					var table = createTableFromResult(result);
 					rowCounts.push((result.rows ? result.rows.length : 0) + (result.safeCut ? '+' : ''));
 					if (result.info) {
-						var info = document.createElement('p');
-						info.textContent = result.info;
+						var info = document.createElement('div');
+						info.classList.add('result-info');
+						info.textContent = result.info.replace(/\s{2,}/g, '\t');
 						tabContents.appendChild(info);
 					}
 					if (table)
 						tabContents.appendChild(table);
-					else {
+					else if (!result.info) {
 						var empty = document.createElement('div');
-						empty.classList.add('empty-result');
+						empty.classList.add('result-empty');
+						empty.textContent = 'OK';
 						tabContents.appendChild(empty);
 					}
 				}
@@ -847,7 +846,7 @@ function executeQuery(sql) {
 				refreshTables();
 			
 			if (rowCounts.length) {
-				showMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
+				// showMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
 			}
 		})
 		.finally(function () {
@@ -859,7 +858,7 @@ function executeQuery(sql) {
 }
 
 function createTableFromResult(result) {
-	if (!result || !result.fields)
+	if (!result || !result.fields || !result.fields.length)
 		return null;
 	
 	var selectedBase = getSelectedBase();
@@ -894,37 +893,54 @@ function createTableFromResult(result) {
 	thead.appendChild(tr);
 	tfoot.appendChild(tr.cloneNode(true));
 	
-	for (var y = 0; y < result.rows.length; y++) {
-		tr = document.createElement('tr');
-		for (var x = 0; x < fieldsCount; x++) {
-			var value = result.rows[y][x];
-			var td = document.createElement('td');
-			var type = result.fields[x].type;
-			td.dataset.type = type;
-			td.dataset.x = x;
-			td.dataset.y = y;
-			td.dataset.name = result.fields[x].name;
-			td.__value = value;
-			if (type == 'string') {
-				value = value.substr(0, 100);
-			}
-			td.textContent = value;
-			tr.appendChild(td);
-		}
-		tbody.appendChild(tr);
-	}
-	
-	if (!y) {
-		var tr = document.createElement('tr');
-		tr.classList.add('empty-result');
-		tr.innerHTML = '<td colspan="' + fieldsCount + '">Empty result</td>';
-		tbody.appendChild(tr);
-	}
 	if (result.safeCut) {
 		var tr = document.createElement('tr');
 		tr.classList.add('safe-cut');
 		tr.innerHTML = '<td colspan="' + fieldsCount + '">Safe cut: there are more rows (>' + result.safeRows + ')</td>';
 		tbody.appendChild(tr);
+	}
+	
+	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY)$/i;
+	var y = 0;
+	function appendRowsChunk() {
+		var limY = Math.min(y + 300, result.rows.length);
+		for (; y < limY; y++) {
+			tr = document.createElement('tr');
+			for (var x = 0; x < fieldsCount; x++) {
+				var value = result.rows[y][x];
+				var td = document.createElement('td');
+				var type = result.fields[x].type;
+				td.className = 'type-' + type;
+				if (value === null) {
+					td.className += ' type-NULL';
+				}
+				td.dataset.type = type;
+				td.dataset.x = x;
+				td.dataset.y = y;
+				td.dataset.name = result.fields[x].name;
+				td.__value = value;
+				if (value && bigValuesRe.test(type)) {
+					value = value.substr(0, 200);
+				}
+				td.textContent = value;
+				tr.appendChild(td);
+			}
+			tbody.appendChild(tr);
+		}
+		
+		if (limY < result.rows.length) {
+			setTimeout(appendRowsChunk, 10);
+		}
+	}
+	
+	if (!result.rows.length) {
+		var tr = document.createElement('tr');
+		tr.classList.add('empty');
+		tr.innerHTML = '<td colspan="' + fieldsCount + '">Empty result</td>';
+		tbody.appendChild(tr);
+	}
+	else {
+		appendRowsChunk();
 	}
 	table.appendChild(thead);
 	table.appendChild(tbody);
@@ -1234,12 +1250,12 @@ button {
 }
 #elMain.loading:after {
 	position: absolute;
-	content: 'loading';
+	content: '';
 	left: 0;
 	top: 0;
 	width: 100%;
 	height: 100%;
-	background: rgba(128,128,128,0.7);
+	background: rgba(128,128,128,0.7) url('?part=loader.gif') center center no-repeat;
 	z-index: 10;
 }
 
@@ -1357,57 +1373,62 @@ table.result tbody tr > * {
 	outline-offset: -1px;
 }
 
-table.result tbody tr > [data-type="NULL"]:after {
+table.result tbody tr > .type-NULL:after {
 	content: 'NULL';
-	opacity: 0.75;
+	opacity: 0.5;
 	font-style: italic;
 }
-table.result tbody tr > [data-type="DECIMAL"],
-table.result tbody tr > [data-type="NEWDECIMAL"],
-table.result tbody tr > [data-type="BIT"],
-table.result tbody tr > [data-type="TINY"],
-table.result tbody tr > [data-type="SHORT"],
-table.result tbody tr > [data-type="LONG"],
-table.result tbody tr > [data-type="FLOAT"],
-table.result tbody tr > [data-type="DOUBLE"],
-table.result tbody tr > [data-type="LONGLONG"],
-table.result tbody tr > [data-type="INT24"],
-table.result tbody tr > [data-type="CHAR"] {
+table.result tbody tr > .type-DECIMAL,
+table.result tbody tr > .type-NEWDECIMAL,
+table.result tbody tr > .type-BIT,
+table.result tbody tr > .type-TINY,
+table.result tbody tr > .type-SHORT,
+table.result tbody tr > .type-LONG,
+table.result tbody tr > .type-FLOAT,
+table.result tbody tr > .type-DOUBLE,
+table.result tbody tr > .type-LONGLONG,
+table.result tbody tr > .type-INT24,
+table.result tbody tr > .type-CHAR {
 	color: #13a;
 	text-align: right;
 }
-table.result tbody tr > [data-type="TIMESTAMP"],
-table.result tbody tr > [data-type="DATE"],
-table.result tbody tr > [data-type="TIME"],
-table.result tbody tr > [data-type="DATETIME"],
-table.result tbody tr > [data-type="YEAR"],
-table.result tbody tr > [data-type="NEWDATE"],
-table.result tbody tr > [data-type="INTERVAL"] {
+table.result tbody tr > .type-TIMESTAMP,
+table.result tbody tr > .type-DATE,
+table.result tbody tr > .type-TIME,
+table.result tbody tr > .type-DATETIME,
+table.result tbody tr > .type-YEAR,
+table.result tbody tr > .type-NEWDATE,
+table.result tbody tr > .type-INTERVAL {
 	color: #471;
 	white-space: nowrap;
 }
-table.result tbody tr > [data-type="ENUM"],
-table.result tbody tr > [data-type="SET"] {
+table.result tbody tr > .type-ENUM,
+table.result tbody tr > .type-SET {
 	color: #a42;
 	white-space: nowrap;
 }
-table.result tbody tr > [data-type="TINY_BLOB"],
-table.result tbody tr > [data-type="MEDIUM_BLOB"],
-table.result tbody tr > [data-type="LONG_BLOB"],
-table.result tbody tr > [data-type="BLOB"],
-table.result tbody tr > [data-type="VAR_STRING"],
-table.result tbody tr > [data-type="STRING"] {
+table.result tbody tr > .type-TINY_BLOB,
+table.result tbody tr > .type-MEDIUM_BLOB,
+table.result tbody tr > .type-LONG_BLOB,
+table.result tbody tr > .type-BLOB,
+table.result tbody tr > .type-VAR_STRING,
+table.result tbody tr > .type-STRING {
 	color: #222;
 }
-table.result tbody tr > [data-type="GEOMETRY"] {
+table.result tbody tr > .type-GEOMETRY {
 	color: #417;
 }
 
 table.result * tr.safe-cut > td,
-table.result * tr.empty-result > td {
+table.result * tr.empty > td {
 	text-align: left;
 	background: #ff9;
 	color: #900;
+}
+
+#elResultset .result-info,
+#elResultset .result-empty {
+	white-space: pre-wrap;
 }
 
 #elResultset .message > .btn-close {
@@ -1429,6 +1450,9 @@ table.result * tr.empty-result > td {
 }
 #elStatProcesslist > table.result {
 	width: 100%;
+}
+#elStatProcesslist > table.result tbody tr > .type-NULL:after {
+	display: none;
 }
 
 
@@ -1894,3 +1918,12 @@ Content-Disposition: inline; filename='favicon-16.png'
 X-Execute: On
 
 <?= base64_decode('iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAIGNIUk0AAHolAACAgwAA+f8AAIDpAAB1MAAA6mAAADqYAAAXb5JfxUYAAAA/SURBVHjaYgy0Uz/MwMBgw0AeOMIQaKf+HwaQ2cgAnzgTA4WAMdBO/T9FJox6YdQLw8cLlGTnowAAAAD//wMAM2UdG0+yL9AAAAAASUVORK5CYII=') ?>
+
+-- ################################################################################################
+
+Name: loader.gif
+Content-Type: image/gif
+Content-Disposition: inline; filename='loader.gif'
+X-Execute: On
+
+<?= base64_decode('R0lGODlhKwALAPEAAJmZmf///8rKyv///yH/C05FVFNDQVBFMi4wAwEAAAAh/hpDcmVhdGVkIHdpdGggYWpheGxvYWQuaW5mbwAh+QQJCgAAACwAAAAAKwALAAACMoSOCMuW2diD88UKG95W88uF4DaGWFmhZid93pq+pwxnLUnXh8ou+sSz+T64oCAyTBUAACH5BAkKAAAALAAAAAArAAsAAAI9xI4IyyAPYWOxmoTHrHzzmGHe94xkmJifyqFKQ0pwLLgHa82xrekkDrIBZRQab1jyfY7KTtPimixiUsevAAAh+QQJCgAAACwAAAAAKwALAAACPYSOCMswD2FjqZpqW9xv4g8KE7d54XmMpNSgqLoOpgvC60xjNonnyc7p+VKamKw1zDCMR8rp8pksYlKorgAAIfkECQoAAAAsAAAAACsACwAAAkCEjgjLltnYmJS6Bxt+sfq5ZUyoNJ9HHlEqdCfFrqn7DrE2m7Wdj/2y45FkQ13t5itKdshFExC8YCLOEBX6AhQAADsAAAAAAAAAAAA=') ?>
