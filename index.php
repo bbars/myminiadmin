@@ -1615,16 +1615,16 @@ body.modal-stack-show .modal-stack {
 				fillStyle: 'transparent',
 				strokeStyle: 'rgba(255,255,255, 0.03)',
 				sharpLines: true,
-				verticalSections: 0,
+				verticalSections: 2,
 				millisPerLine: 10000,
 				lineWidth: 1,
 			},
 			labels: {
-				fillStyle: 'transparent',
+				fillStyle: '#fff',
 			},
 			// maxValue: 102,
 			minValue: 0,
-			// timestampFormatter: SmoothieChart.timeFormatter,
+			timestampFormatter: SmoothieChart.timeFormatter,
 		});
 		var qpsSeries = new TimeSeries();
 		chart.addTimeSeries(qpsSeries, {
