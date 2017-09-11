@@ -812,7 +812,10 @@ function refreshTables() {
 			div.classList.add('table');
 			div.value = table;
 			div.dataset.table = table;
-			div.textContent = table;
+			var a = document.createElement('a');
+			a.href = '#!sql=SELECT * FROM `' + table + '`;';
+			a.textContent = table;
+			div.appendChild(a);
 			elTables.appendChild(div);
 		}
 		return tables;
@@ -822,7 +825,7 @@ function refreshTables() {
 function executeQuery(sql) {
 	var selectedConnection = getSelectedConnectionId();
 	var selectedBase = getSelectedBase();
-	var matches = /\b(?:(database)|(table))\b/i.exec(sql) || [];
+	var matches = /\b(?:(database)|(table|view))\b/i.exec(sql) || [];
 	var thenRefreshBases = !!matches[1];
 	var thenRefreshTables = !!matches[2];
 	editor.setDisabled(true);
@@ -1121,6 +1124,30 @@ function showError(error, duplicate) {
 	return errorMessage;
 }
 
+function processLocationParams(paramsStr, execute) {
+	paramsStr = (paramsStr || '') + '';
+	if (/^#!/.test(paramsStr))
+		paramsStr = paramsStr.slice(2);
+	if (!paramsStr.trim())
+		return null;
+	
+	var paramsList = paramsStr.split('&');
+	var params = {};
+	for (var i = 0; i < paramsList.length; i++) {
+		var param = paramsList[i].split('=', 2);
+		params[param[0]] = param[1];
+	}
+	
+	if (params.sql) {
+		editor.setValue(params.sql);
+		if (execute) {
+			executeQuery(editor.getValue());
+		}
+	}
+	
+	return params;
+}
+
 </script>
 <style>
 
@@ -1280,9 +1307,13 @@ button {
 	color: #015;
 	cursor: pointer;
 	flex: 0 0 auto;
+}
+#elTables > .table > a {
+	color: inherit;
+	text-decoration: none;
 	border-bottom: transparent 1px dotted;
 }
-#elTables > .table:hover {
+#elTables > .table > a:hover {
 	border-color: initial;
 }
 #elTables > .table.current {
@@ -1741,9 +1772,15 @@ elBases.addEventListener('change', function (event) {
 });
 refreshConnections().then(function () {
 	elStatButton.disabled = false;
+	var xss = /^https?:\/\/[^/]+\//.test(document.referrer) && document.location.href.indexOf(document.referrer) === 0;
+	processLocationParams(document.location.hash, xss);
+	document.location.hash = '';
 });
 elTables.addEventListener('click', function (event) {
-	var table = event.target.dataset.table;
+	if (event.target.nodeName != 'A')
+		return;
+	
+	var table = event.target.parentElement.dataset.table;
 	if (table) {
 		editor.focus();
 		sql = '';
@@ -1763,10 +1800,10 @@ elTables.addEventListener('click', function (event) {
 			executeQuery(editor.getValue());
 		}
 	}
+	
+	event.preventDefault();
+	return false;
 });
-
-editor.setValue(localStorage.getItem('mymi_query'));
-editor.focus();
 
 editor.addEventListener('keyup', function (event) {
 	if (~[10, 13].indexOf(event.charCode || event.keyCode) && event.ctrlKey) {
@@ -1797,6 +1834,9 @@ elLogoutButton.addEventListener('click', function () {
 		document.location = '?logout';
 	}
 });
+
+editor.setValue(localStorage.getItem('mymi_query'));
+editor.focus();
 
 </script>
 <link rel="stylesheet" href="?part=style">
