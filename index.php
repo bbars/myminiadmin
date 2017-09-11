@@ -86,6 +86,14 @@ elseif (isset($_GET['source'])) {
 		}</style>";
 	die($source);
 }
+elseif (isset($_GET['logout'])) {
+	session_unset();
+	session_destroy();
+	session_write_close();
+	setcookie(session_name(), '', 0, '/');
+	header('Location: ?', true, 302);
+	die();
+}
 
 class MultipartFile {
 	protected $fp;
@@ -582,7 +590,8 @@ function apiCall(fn, params) {
 				error.message = error.message || 'Unknown error';
 			break;
 			case 'NATIVE_ERROR':
-				// pass
+			case 'MYSQL_CONNECT_ERROR':
+				showError(error, true);
 			break;
 			case 'MYSQL_WRONG_CREDENTIALS':
 				return updateCredentials().then(function () {
@@ -596,7 +605,6 @@ function apiCall(fn, params) {
 				return error;
 			break;
 		}
-		showError(error);
 	});
 	
 	return xhr;
@@ -816,8 +824,7 @@ function executeQuery(sql) {
 				tabContents.classList.add('tab-contents');
 				tab.appendChild(tabContents);
 				if (result.error) {
-					var errorMessage = showError(result.error);
-					tabContents.appendChild(errorMessage.cloneNode(true));
+					showError(result.error, tabContents);
 				}
 				else {
 					var table = createTableFromResult(result);
@@ -1042,7 +1049,7 @@ function showMessage(content, className, cleanup) {
 	return message;
 }
 
-function showError(error) {
+function showError(error, duplicate) {
 	var content = document.createElement('div');
 	if (typeof error == 'string') {
 		error = {
@@ -1074,7 +1081,23 @@ function showError(error) {
 	}
 	if (!content.children.length)
 		return null;
-	return showMessage(content, 'error');
+	
+	var errorMessage = showMessage(content, 'error');
+	
+	if (duplicate) {
+		if (!(duplicate instanceof HTMLElement)) {
+			var tab = document.createElement('div');
+			tab.classList.add('tab');
+			var tabContents = document.createElement('div');
+			tabContents.classList.add('tab-contents');
+			tab.appendChild(tabContents);
+			elResultset.appendChild(tab);
+			duplicate = tabContents;
+		}
+		duplicate.appendChild(errorMessage.cloneNode(true));
+	}
+	
+	return errorMessage;
 }
 
 </script>
@@ -1750,7 +1773,7 @@ elConsole.addEventListener('click', function (event) {
 elLogoutButton.addEventListener('click', function () {
 	if (confirm('Are you sure?\nAll connection settings will be lost!')) {
 		setCookie(server.sessionName, null);
-		document.location.reload();
+		document.location = '?logout';
 	}
 });
 
