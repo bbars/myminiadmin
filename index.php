@@ -9,91 +9,7 @@ set_exception_handler(function ($exception) {
 	die(json_encode((new MyError($exception))->describe()));
 });
 
-session_name('mymi_session');
-session_start();
-if (!$_GET) {
-	$_GET['part'] = 'index';
-}
-$_GET['part'] = isset($_GET['part']) ? $_GET['part'] : null;
-$_GET['api'] = isset($_GET['api']) ? $_GET['api'] : null;
-
-if ($_GET['api']) {
-	header('Content-Type: application/json', true, 200);
-	
-	try {
-		$params = array();
-		if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-			$params = $_POST ? $_POST : Api::getRequestBody();
-		}
-		elseif (!empty($_GET['params'])) {
-			$params = $_GET['params'];
-		}
-		$res = Api::process($_GET['api'], $params);
-	}
-	catch (Exception $e) {
-		header(' : ', true, 400);
-		$res = MyError::getErrorDescription($e);
-	}
-	$res = json_encode($res);
-	header('Content-Length: ' . strlen($res));
-	die($res);
-}
-elseif ($_GET['part']) {
-	$multipartFile = new MultipartFile();
-	$chunk = $multipartFile->getChunk($_GET['part']);
-	if (!$chunk) {
-		header(' : ', true, 404);
-		throw new MyError('NOT_FOUND');
-	}
-	$cacheMaxAge = 3600;
-	$headers = &$chunk[0];
-	$body = &$chunk[1];
-	if (!MultipartFile::filterHeaders($headers, 'Content-Disposition'))
-		$headers[] = "Content-Disposition: inline; filename='" . urlencode($_GET['part']) . "'; name='" . urlencode($_GET['part']) . "'";
-	if (!MultipartFile::filterHeaders($headers, 'Content-Length'))
-		$headers[] = 'Content-Length: ' . strlen($body);
-	if (!MultipartFile::filterHeaders($headers, 'Cache-Control'))
-		$headers[] = "Cache-Control: public, max-age=$cacheMaxAge";
-	if (!MultipartFile::filterHeaders($headers, 'Expires'))
-		$headers[] = 'Expires: ' . date('r', time() + $cacheMaxAge);
-	if (!MultipartFile::filterHeaders($headers, 'Last-Modified'))
-		$headers[] = 'Last-Modified: ' . date('r', filemtime(__FILE__));
-	if (!MultipartFile::filterHeaders($headers, 'Pragma'))
-		$headers[] = 'Pragma: cache';
-	foreach ($headers as $header) {
-		header($header);
-	}
-	echo $body;
-	die();
-}
-elseif (isset($_GET['source'])) {
-	$source = (new MultipartFile())->getHeadingBlock();
-	$counter = 0;
-	$source = highlight_string($source, true);
-	$source = preg_replace_callback('@<br */?>@i', function ($matches) use (&$counter) {
-		$counter++;
-		return '<a name="L' . $counter . '"></a>' . $matches[0];
-	}, $source);
-	$source .= "<style>a[name]:target {
-			background: rgba(255, 212, 128, 0.5);
-			display: inline-block;
-			height: 1em;
-			margin-top: -1.2em;
-			width: 100%;
-			padding: 0.2em 0;
-			z-index: -1;
-			position: relative;
-		}</style>";
-	die($source);
-}
-elseif (isset($_GET['logout'])) {
-	session_unset();
-	session_destroy();
-	session_write_close();
-	setcookie(session_name(), '', 0, '/');
-	header('Location: ?', true, 302);
-	die();
-}
+// CLASSES:
 
 class MultipartFile {
 	protected $fp;
@@ -512,6 +428,111 @@ class MyError extends Exception {
 			'file' => "{$file}:{$e->getLine()}",
 		);
 	}
+}
+
+// PROCESS REQUEST:
+
+session_name('mymi_session');
+session_start();
+if (!$_GET) {
+	$_GET['part'] = 'index';
+}
+$_GET['part'] = isset($_GET['part']) ? $_GET['part'] : null;
+$_GET['api'] = isset($_GET['api']) ? $_GET['api'] : null;
+
+if ($_GET['api']) {
+	header('Content-Type: application/json', true, 200);
+	
+	try {
+		$params = array();
+		if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+			$params = $_POST ? $_POST : Api::getRequestBody();
+		}
+		elseif (!empty($_GET['params'])) {
+			$params = $_GET['params'];
+		}
+		$res = Api::process($_GET['api'], $params);
+	}
+	catch (Exception $e) {
+		header(' : ', true, 400);
+		$res = MyError::getErrorDescription($e);
+	}
+	$res = json_encode($res);
+	header('Content-Length: ' . strlen($res));
+	die($res);
+}
+elseif ($_GET['part']) {
+	$multipartFile = new MultipartFile();
+	$chunk = $multipartFile->getChunk($_GET['part']);
+	if (!$chunk) {
+		header(' : ', true, 404);
+		throw new MyError('NOT_FOUND');
+	}
+	$cacheMaxAge = 3600;
+	$headers = &$chunk[0];
+	$body = &$chunk[1];
+	if (!MultipartFile::filterHeaders($headers, 'Content-Disposition'))
+		$headers[] = "Content-Disposition: inline; filename='" . urlencode($_GET['part']) . "'; name='" . urlencode($_GET['part']) . "'";
+	if (!MultipartFile::filterHeaders($headers, 'Content-Length'))
+		$headers[] = 'Content-Length: ' . strlen($body);
+	if (!MultipartFile::filterHeaders($headers, 'Cache-Control'))
+		$headers[] = "Cache-Control: public, max-age=$cacheMaxAge";
+	if (!MultipartFile::filterHeaders($headers, 'Expires'))
+		$headers[] = 'Expires: ' . date('r', time() + $cacheMaxAge);
+	if (!MultipartFile::filterHeaders($headers, 'Last-Modified'))
+		$headers[] = 'Last-Modified: ' . date('r', filemtime(__FILE__));
+	if (!MultipartFile::filterHeaders($headers, 'Pragma'))
+		$headers[] = 'Pragma: cache';
+	foreach ($headers as $header) {
+		header($header);
+	}
+	echo $body;
+	die();
+}
+elseif (isset($_GET['source'])) {
+	$source = (new MultipartFile())->getHeadingBlock();
+	$counter = 0;
+	$source = highlight_string($source, true);
+	$source = preg_replace_callback('@<br */?>@i', function ($matches) use (&$counter) {
+		$counter++;
+		return '<a name="L' . $counter . '"></a>' . $matches[0];
+	}, $source);
+	$source .= "<style>a[name]:target {
+			background: rgba(255, 212, 128, 0.5);
+			display: inline-block;
+			height: 1em;
+			margin-top: -1.2em;
+			width: 100%;
+			padding: 0.2em 0;
+			z-index: -1;
+			position: relative;
+		}</style>";
+	die($source);
+}
+elseif (isset($_GET['logout'])) {
+	session_unset();
+	session_destroy();
+	session_write_close();
+	setcookie(session_name(), '', 0, '/');
+	header('Location: ?', true, 302);
+	die();
+}
+elseif (isset($_GET['logout'])) {
+	session_unset();
+	session_destroy();
+	session_write_close();
+	setcookie(session_name(), '', 0, '/');
+	header('Location: ?', true, 302);
+	die();
+}
+elseif (isset($_GET['download'])) {
+	header('Content-Type: application/x-php; charset="utf-8"');
+	header('Content-Disposition: attachment; filename=myminiadmin.php');
+	die(file_get_contents(__FILE__));
+}
+else {
+	header(' : ', true, 404);
+	throw new MyError('NOT_FOUND');
 }
 
 __halt_compiler(); ?>
