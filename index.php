@@ -140,7 +140,7 @@ class MultipartFile {
 class Api {
 	protected static $mysqliOptions = array(
 		MYSQLI_OPT_CONNECT_TIMEOUT => 5,
-		// MYSQLI_INIT_COMMAND => "SET NAMES 'utf8'; SET CHARACTER SET 'utf8_general_ci';",
+		// MYSQLI_INIT_COMMAND => "SET NAMES 'utf8'; SET CHARACTER SET 'utf8'",
 		// MYSQLI_OPT_INT_AND_FLOAT_NATIVE => true, // mysqlnd only
 	);
 	protected static $defaultDbCfg = array(
@@ -183,13 +183,13 @@ class Api {
 		restore_error_handler();
 		switch ($mysqli->connect_errno) {
 			case 0:
-				return $mysqli;
+				// pass
 			case 1045:
 				throw new MyError('MYSQL_WRONG_CREDENTIALS', "Connection could not be established: #{$mysqli->connect_errno} {$mysqli->connect_error}");
 			default:
 				throw new MyError('MYSQL_CONNECT_ERROR', "Connection could not be established: #{$mysqli->connect_errno} {$mysqli->connect_error}");
 		}
-		$mysqli->multi_query("SET NAMES 'utf8'; SET CHARACTER SET 'utf8_general_ci';");
+		$mysqli->query("SET NAMES 'utf8'");
 		return $mysqli;
 	}
 	
