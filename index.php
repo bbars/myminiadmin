@@ -184,6 +184,7 @@ class Api {
 		switch ($mysqli->connect_errno) {
 			case 0:
 				// pass
+			break;
 			case 1045:
 				throw new MyError('MYSQL_WRONG_CREDENTIALS', "Connection could not be established: #{$mysqli->connect_errno} {$mysqli->connect_error}");
 			default:
