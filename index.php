@@ -138,6 +138,7 @@ class MultipartFile {
 }
 
 class Api {
+	const CHARSETNR_UTF8 = 33;
 	protected static $mysqliOptions = array(
 		MYSQLI_OPT_CONNECT_TIMEOUT => 5,
 		// MYSQLI_INIT_COMMAND => "SET NAMES 'utf8'; SET CHARACTER SET 'utf8'",
@@ -237,7 +238,7 @@ class Api {
 		}
 	}
 	
-	public static function query($dbCfg, $base, $sql, $safeRows = 1000) {
+	public static function query($dbCfg, $base, $sql, $safeRows = 1000, $encodeUtf8 = false) {
 		$mysqli = self::getDb($dbCfg, $base);
 		$success = $mysqli->multi_query($sql);
 		$safeRows = (int) $safeRows;
@@ -259,15 +260,24 @@ class Api {
 			
 			if ($success && $mysqliResult = $mysqli->use_result()) {
 				$result['fields'] = $mysqliResult->fetch_fields();
-				foreach ($result['fields'] as $field) {
-					// var_dump($field); die;
+				$binaryCols = [];
+				foreach ($result['fields'] as $i => $field) {
 					$field->type = self::mysqliType($field->type);
+					if ($field->charsetnr != self::CHARSETNR_UTF8)
+						$binaryCols[] = $i;
 				}
 				unset($field);
 				
 				$safeCut = false;
 				$result['rows'] = self::fetchRows($mysqliResult, MYSQLI_NUM, $safeRows, $safeCut);
 				$result['safeCut'] = $safeCut;
+				if ($encodeUtf8 && $binaryCols) {
+					foreach ($binaryCols as $i) {
+						foreach ($result['rows'] as &$row)
+							$row[$i] = utf8_encode($row[$i]);
+						unset($row);
+					}
+				}
 				
 				$mysqliResult->free();
 				if (!$mysqli->more_results()) {
@@ -279,42 +289,6 @@ class Api {
 			}
 			$resultset[] = $result;
 		} while ($mysqli->more_results());
-		return $resultset;
-
-		$mysqli = self::getDb($dbCfg, $base);
-		if (!$mysqli->multi_query($sql)) {
-			throw new MyError('MYSQL_ERROR', $mysqli->error);
-		}
-		$safeRows = (int) $safeRows;
-		
-		$resultset = [];
-		do {
-			if ($mysqliResult = $mysqli->use_result()) {
-				$fields = $mysqliResult->fetch_fields();
-				foreach ($fields as &$field) {
-					$field->type = self::mysqliType($field->type);
-				}
-				unset($field);
-				$safeCut = false;
-				
-				$result = array(
-					'info' => '',
-					'fields' => $fields,
-					'errors' => $mysqli->error_list,
-					'rows' => self::fetchRows($mysqliResult, MYSQLI_NUM, $safeRows, $safeCut),
-					'safeRows' => $safeRows,
-					'safeCut' => $safeCut,
-				);
-				
-				$mysqliResult->free();
-				$resultset[] = &$result;
-				if (!$mysqli->more_results()) {
-					$result['info'] = $mysqli->info;
-					break;
-				}
-				unset($result);
-			}
-		} while ($mysqli->more_results() && $mysqli->next_result());
 		return $resultset;
 	}
 	
@@ -823,16 +797,17 @@ function refreshTables() {
 	});
 }
 
-function executeQuery(sql) {
+function executeQuery(sql, safeRows) {
 	var selectedConnection = getSelectedConnectionId();
 	var selectedBase = getSelectedBase();
 	var matches = /\b(?:(database)|(table|view))\b/i.exec(sql) || [];
 	var thenRefreshBases = !!matches[1];
 	var thenRefreshTables = !!matches[2];
+	safeRows = safeRows || 1000;
 	editor.setDisabled(true);
 	elResultset.innerHTML = '';
 	elMain.classList.add('loading');
-	return apiCall('query', selectedConnection, selectedBase, sql).promise
+	return apiCall('query', selectedConnection, selectedBase, sql, safeRows, true).promise
 		.catch(function (error) {
 			showError(error);
 		})
@@ -923,7 +898,9 @@ function createTableFromResult(result) {
 	}
 	
 	thead.appendChild(tr);
-	tfoot.appendChild(tr.cloneNode(true));
+	if (result.rows.length > 30) {
+		tfoot.appendChild(tr.cloneNode(true));
+	}
 	
 	if (result.safeCut) {
 		var tr = document.createElement('tr');
