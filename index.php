@@ -1247,7 +1247,7 @@ button {
 	border-bottom-left-radius: 0;
 	margin-left: -1px;
 }
-.control-row > :first-child {
+.control-row > :first-child:not(:last-child) {
 	border-top-right-radius: 0;
 	border-bottom-right-radius: 0;
 }
