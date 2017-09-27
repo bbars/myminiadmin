@@ -873,7 +873,6 @@ function createTableFromResult(result) {
 	table.classList.add('result');
 	var thead = document.createElement('thead');
 	var tbody = document.createElement('tbody');
-	var tfoot = document.createElement('tfoot');
 	var tr = document.createElement('tr');
 	var fieldsCount = result.fields.length;
 	for (var x = 0; x < fieldsCount; x++) {
@@ -898,9 +897,6 @@ function createTableFromResult(result) {
 	}
 	
 	thead.appendChild(tr);
-	if (result.rows.length > 30) {
-		tfoot.appendChild(tr.cloneNode(true));
-	}
 	
 	if (result.safeCut) {
 		var tr = document.createElement('tr');
@@ -953,7 +949,6 @@ function createTableFromResult(result) {
 	}
 	table.appendChild(thead);
 	table.appendChild(tbody);
-	table.appendChild(tfoot);
 	return table;
 }
 
@@ -1332,6 +1327,7 @@ button {
 #elResultset {
 	overflow: auto;
 	flex: 1 1 50%;
+	position: relative;
 }
 #elResultset > * + * {
 	border-top: #444 2px dashed;
@@ -1397,6 +1393,15 @@ table.result {
 	border-spacing: 0;
 	border-collapse: collapse;
 	border: #ddd 2px solid;
+	margin: 0px;
+}
+table.result.scrolled > thead {
+	background: #ddd;
+	box-shadow: #ddd 0 -0.5em;
+	/*box-shadow: #ddd 0 -0.5em, rgba(255,255,255, 0.5) 0 0.5em 0.5em;*/
+}
+table.result.fixed > thead {
+	transform: none !important;
 }
 table.result tr > * {
 	border: #ddd 1px solid;
@@ -1815,6 +1820,44 @@ elLogoutButton.addEventListener('click', function () {
 
 editor.setValue(localStorage.getItem('mymi_query'));
 editor.focus();
+
+elResultset.addEventListener('scroll', updateTableHeaderScroll);
+
+function updateTableHeaderScroll() {
+	// find first visible table:
+	var tables = elResultset.querySelectorAll('.tab > .tab-contents > table.result');
+	if (!tables.length)
+		return;
+	var scrollTop = elResultset.scrollTop;
+	var firstTable = null;
+	var tableY;
+	var tableH;
+	for (var i = 0; i < tables.length; i++) {
+		tables[i].classList.remove('scrolled');
+		tables[i].classList.add('fixed');
+		if (!firstTable) {
+			tableY = tables[i].offsetTop;
+			tableH = tables[i].offsetHeight;
+			if (scrollTop > tableY && scrollTop < tableY + tableH) {
+				firstTable = tables[i];
+			}
+		}
+	}
+	if (!firstTable)
+		return;
+	// get last-child row in tbody:
+	var lastRow = firstTable.children[1]; // tbody
+	if (!lastRow.children.length)
+		return;
+	lastRow = lastRow.children[lastRow.children.length - 1];
+	// apply offset:
+	firstTable.classList.remove('fixed');
+	firstTable.classList.add('scrolled');
+	var thead = firstTable.children[0];
+	var maxOffset = lastRow.offsetTop - thead.offsetHeight;
+	var offset = Math.max(0, Math.min(scrollTop - tableY, maxOffset));
+	thead.style.transform = 'translateY(' + offset + 'px)';
+}
 
 </script>
 <link rel="stylesheet" href="?part=style">
