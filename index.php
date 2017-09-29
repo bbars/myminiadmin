@@ -1582,6 +1582,35 @@ body.modal-stack-show .modal-stack {
 	border-radius: 1px;
 }
 
+.splitter {
+	height: 3px;
+	background: #fff;
+	border: 1px solid;
+	border-color: #666 transparent;
+	cursor: row-resize;
+	flex: 0 0 3px;
+	min-height: 3px;
+}
+.splitter:after {
+	content: '';
+	position: absolute;
+	width: 100%;
+	margin: -1px;
+	height: 1em;
+	z-index: 2;
+}
+.splitter:active {
+	border-color: #09f transparent;
+	background: #09f;
+}
+.splitter:active:after {
+	top: 0;
+	height: 100%;
+}
+#elResultset {
+	min-height: 2em;
+}
+
 </style>
 </head>
 <body>
@@ -1606,6 +1635,7 @@ body.modal-stack-show .modal-stack {
 		<main id="elMain" class="flex-col flex-1-auto">
 			<div id="elQuery"></div>
 			<!-- <textarea></textarea> -->
+			<div class="splitter"></div>
 			<section id="elResultset"></section>
 		</main>
 	</div>
@@ -1858,6 +1888,38 @@ function updateTableHeaderScroll() {
 	var offset = Math.max(0, Math.min(scrollTop - tableY, maxOffset));
 	thead.style.transform = 'translateY(' + offset + 'px)';
 }
+
+var splitterCaptured = false;
+elMain.addEventListener('mousedown', function (event) {
+	if (!event.target.classList.contains('splitter'))
+		return;
+	splitterCaptured = event.clientY;
+	event.preventDefault();
+	event.stopPropagation();
+	return false;
+});
+elMain.addEventListener('mouseup', function (event) {
+	splitterCaptured = false;
+	localStorage.setItem('mymi_splitter_elMain', parseFloat(elQuery.style.flexBasis));
+});
+elMain.addEventListener('mousemove', function (event) {
+	if (splitterCaptured === false)
+		return;
+	var h = 100 * event.clientY / elMain.clientHeight;
+	elQuery.style.flexBasis = h + '%';
+	elResultset.style.flexBasis = (100 - h) + '%';
+	event.preventDefault();
+	event.stopPropagation();
+	return false;
+});
+
+(function () {
+	var h = parseFloat(localStorage.getItem('mymi_splitter_elMain'));
+	if (isNaN(h))
+		return false;
+	elQuery.style.flexBasis = h + '%';
+	elResultset.style.flexBasis = (100 - h) + '%';
+})();
 
 </script>
 <link rel="stylesheet" href="?part=style">
