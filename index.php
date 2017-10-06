@@ -1599,6 +1599,9 @@ body.modal-stack-show .modal-stack {
 	height: 1em;
 	z-index: 2;
 }
+.splitter:hover {
+	border-color: #09f transparent;
+}
 .splitter:active {
 	border-color: #09f transparent;
 	background: #09f;
