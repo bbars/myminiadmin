@@ -1720,7 +1720,8 @@ body.modal-stack-show .modal-stack {
 <div id="elModalBlobValue" class="modal">
 	<h2 id="elModalBlobValueTitle"></h2>
 	<div class="m-b">
-		<label><input type="radio" name="blob-value-encode-base" value="16" checked> Hex</label>
+		<label><input type="radio" name="blob-value-encode-base" value="256" checked> Raw</label>
+		<label><input type="radio" name="blob-value-encode-base" value="16"> Hex</label>
 		<label><input type="radio" name="blob-value-encode-base" value="2"> Binary</label>
 	</div>
 	<textarea id="elBlobValueEncoded" style="font-family: Consolas, monospace;" readonly></textarea>
@@ -1729,6 +1730,10 @@ body.modal-stack-show .modal-stack {
 	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded) {
 		function encode(value, base) {
 			base = base || elModalBlobValue.querySelector('[name="blob-value-encode-base"]:checked').value;
+			if (base == 256) {
+				elBlobValueEncoded.value = value;
+				return;
+			}
 			var len = Math.ceil(8 / Math.log2(base));
 			var fill = new Array(len).fill('0').join('');
 			var decoded = [];
