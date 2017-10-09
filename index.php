@@ -1526,7 +1526,7 @@ table.result * tr.empty > td {
 	width: 100%;
 	height: 100%;
 	z-index: 10000;
-	padding: 5mm;
+	padding: 1em;
 	box-sizing: border-box;
 	text-align: center;
 }
@@ -1538,25 +1538,6 @@ body.modal-stack-show {
 }
 body.modal-stack-show .modal-stack {
 	overflow: auto !important;
-}
-.modal-stack:after {
-	content: '\00d7';
-	font-family: 'consolas', monospace;
-	position: absolute;
-	font-size: 6mm;
-	right: 5mm;
-	top: 5mm;
-	width: 1.5em;
-	height: 1.5em;
-	line-height: 1.5em;
-	font-weight: 800;
-	background: #fff;
-	color: #000;
-	border-radius: 50%;
-	cursor: pointer;
-	text-align: center;
-	z-index: 2;
-	display: none !important;
 }
 .modal-stack > * {
 	display: none;
@@ -1612,6 +1593,18 @@ body.modal-stack-show .modal-stack {
 }
 #elResultset {
 	min-height: 2em;
+}
+
+#elModalBlobValueTitle {
+	max-width: 30em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	margin-top: 0;
+}
+#elBlobValueEncoded {
+	display: block;
+	width: 100%;
+	min-height: 5em;
 }
 
 </style>
@@ -1724,6 +1717,49 @@ body.modal-stack-show .modal-stack {
 	
 	</script>
 </div>
+<div id="elModalBlobValue" class="modal">
+	<h2 id="elModalBlobValueTitle"></h2>
+	<div class="m-b">
+		<label><input type="radio" name="blob-value-encode-base" value="16" checked> Hex</label>
+		<label><input type="radio" name="blob-value-encode-base" value="2"> Binary</label>
+	</div>
+	<textarea id="elBlobValueEncoded" style="font-family: Consolas, monospace;" readonly></textarea>
+	<script>
+	
+	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded) {
+		function encode(value, base) {
+			base = base || elModalBlobValue.querySelector('[name="blob-value-encode-base"]:checked').value;
+			var len = Math.ceil(8 / Math.log2(base));
+			var fill = new Array(len).fill('0').join('');
+			var decoded = [];
+			if (typeof value != 'string')
+				return;
+			for (var i = 0; i < value.length; i++) {
+				decoded.push((fill + value.charCodeAt(i).toString(base)).slice(-len));
+			}
+			elBlobValueEncoded.value = decoded.join(' ');
+		}
+		
+		var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY)$/i;
+		
+		elResultset.addEventListener('click', function (event) {
+			if (!event.ctrlKey || !bigValuesRe.test(event.target.getAttribute('data-type')))
+				return;
+			var td = event.target;
+			
+			elModalBlobValue.addEventListener('change', function (event) {
+				encode(td.__value);
+			});
+			
+			elModalBlobValueTitle.textContent = td.getAttribute('data-name') + ' (' + td.getAttribute('data-type') + ')';
+			encode(td.__value);
+			
+			Modal.show(elModalBlobValue);
+		});
+	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded);
+	
+	</script>
+</div>
 <script src="?part=modal.js"></script>
 <script src="?part=ace-sql-twilight.js"></script>
 <script>
@@ -1830,13 +1866,6 @@ editor.addEventListener('change', function (event) {
 	localStorage.setItem('mymi_query', editor.getValue());
 });
 
-elResultset.addEventListener('click', function (event) {
-	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY)$/i;
-	if (!event.ctrlKey || !event.target.__value || !bigValuesRe.test(event.target.dataset.type))
-		return;
-	alert(event.target.__value);
-});
-
 elConsole.addEventListener('click', function (event) {
 	if (event.target.classList.contains('btn-close')) {
 		var notification = event.target.parentElement;
@@ -1913,6 +1942,7 @@ elMain.addEventListener('mousemove', function (event) {
 	elResultset.style.flexBasis = (100 - h) + '%';
 	event.preventDefault();
 	event.stopPropagation();
+	window.dispatchEvent(new Event('resize'));
 	return false;
 });
 
@@ -1922,6 +1952,7 @@ elMain.addEventListener('mousemove', function (event) {
 		return false;
 	elQuery.style.flexBasis = h + '%';
 	elResultset.style.flexBasis = (100 - h) + '%';
+	window.dispatchEvent(new Event('resize'));
 })();
 
 </script>
