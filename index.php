@@ -1215,12 +1215,17 @@ button {
 	font-size: inherit;
 	box-sizing: border-box;
 	border-radius: 2px;
-	border: #cb9 1px solid;
+}
+input[type=radio],
+input[type=checkbox] {
+	border: none;
+	vertical-align: -0.15em;
 }
 
 input[type=text],
 select,
 textarea {
+	border: #cb9 1px solid;
 	margin: 0;
 	padding: 0.35em 0.5em;
 	line-height: 1.3em;
@@ -1343,9 +1348,10 @@ button {
 	box-sizing: border-box;
 }
 
-.m-b {
-	margin-bottom: 0.5em;
-}
+.m-t { margin-top:    0.5em; }
+.m-r { margin-right:  0.5em; }
+.m-b { margin-bottom: 0.5em; }
+.m-l { margin-left:   0.5em; }
 
 #elConsole {
 	background: #444;
@@ -1530,6 +1536,13 @@ table.result * tr.empty > td {
 	box-sizing: border-box;
 	text-align: center;
 }
+.modal-stack:after {
+	content: 'Close (Esc)';
+	font-family: monospace;
+	display: block;
+	padding-top: 1em;
+	color: #fff;
+}
 body.modal-stack-show .modal-stack {
 	display: block;
 }
@@ -1603,8 +1616,18 @@ body.modal-stack-show .modal-stack {
 }
 #elBlobValueEncoded {
 	display: block;
-	width: 100%;
-	min-height: 5em;
+	background: #eee;
+	font-family: Consolas, monospace;
+	border-radius: 1px;
+	padding: 0.5em;
+	box-shadow: rgba(0,0,0, 0.15) 1px 1px 1px 0 inset;
+	max-height: 50vh;
+	overflow: auto;
+	word-break: break-word;
+}
+#elBlobValueEncoded > * {
+	display: inline-block;
+	margin-right: 0.5em;
 }
 
 </style>
@@ -1718,20 +1741,21 @@ body.modal-stack-show .modal-stack {
 	</script>
 </div>
 <div id="elModalBlobValue" class="modal">
+	<span class="modal-close"></span>
 	<h2 id="elModalBlobValueTitle"></h2>
 	<div class="m-b">
-		<label><input type="radio" name="blob-value-encode-base" value="256" checked> Raw</label>
-		<label><input type="radio" name="blob-value-encode-base" value="16"> Hex</label>
-		<label><input type="radio" name="blob-value-encode-base" value="2"> Binary</label>
+		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="256" checked>Raw</label>
+		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="16">Hex</label>
+		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="2">Binary</label>
 	</div>
-	<textarea id="elBlobValueEncoded" style="font-family: Consolas, monospace;" readonly></textarea>
+	<div id="elBlobValueEncoded"></div>
 	<script>
 	
 	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded) {
 		function encode(value, base) {
 			base = base || elModalBlobValue.querySelector('[name="blob-value-encode-base"]:checked').value;
 			if (base == 256) {
-				elBlobValueEncoded.value = value;
+				elBlobValueEncoded.textContent = value;
 				return;
 			}
 			var len = Math.ceil(8 / Math.log2(base));
@@ -1742,7 +1766,7 @@ body.modal-stack-show .modal-stack {
 			for (var i = 0; i < value.length; i++) {
 				decoded.push((fill + value.charCodeAt(i).toString(base)).slice(-len));
 			}
-			elBlobValueEncoded.value = decoded.join(' ');
+			elBlobValueEncoded.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
 		}
 		
 		var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY)$/i;
