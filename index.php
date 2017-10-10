@@ -760,7 +760,7 @@ function refreshBases(selectedBase) {
 		elBases.innerHTML = '';
 		elBases.__bases = bases;
 		for (var i = 0; i < resultset[0].rows.length; i++) {
-			var base = resultset[0].rows[i];
+			var base = resultset[0].rows[i][0];
 			editor.addCompletion('base', base);
 			bases.push(base);
 			var option = document.createElement('option');
@@ -788,7 +788,7 @@ function refreshTables() {
 		elTables.innerHTML = '';
 		elTables.__tables = tables;
 		for (var i = 0; i < resultset[0].rows.length; i++) {
-			var table = resultset[0].rows[i];
+			var table = resultset[0].rows[i][0];
 			editor.addCompletion('table', table);
 			tables.push(table);
 			var div = document.createElement('div');
@@ -1153,7 +1153,7 @@ function SQLNamesCompleter(tag) {
 				callback(null, this.map(function (word) {
 					return {
 						caption: word,
-						value: '`' + word + '`',
+						value: word,
 						score: 0,
 						meta: tag
 					};
