@@ -2180,8 +2180,8 @@ snippet colcom\n\
 	comment on column ${1:table}.${2:column} is '${3:comment}';\n\
 snippet addcol\n\
 	alter table ${1:table} add (${2:column} ${3:type});\n\
-snippet seq\n\
-	create sequence ${1:name} start with ${2:1} increment by ${3:1} minvalue ${4:1};\n\
+# snippet seq\n\
+# 	create sequence ${1:name} start with ${2:1} increment by ${3:1} minvalue ${4:1};\n\
 snippet s*\n\
 	select * from ${1:table};\n\
 snippet trun\n\
