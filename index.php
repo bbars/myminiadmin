@@ -690,7 +690,7 @@ function updateCredentials() {
 
 function getSelectedConnectionId() {
 	var el = elConnections.querySelectorAll('option')[elConnections.selectedIndex];
-	return el && el.value !== '' ? el.value : localStorage.getItem('mymi_connection_id');
+	return el && el.value !== '' ? el.value : config.connection_id;
 }
 
 function getConnectionCfg(selectedConnection) {
@@ -700,7 +700,7 @@ function getConnectionCfg(selectedConnection) {
 
 function getSelectedBase() {
 	var el = elBases.querySelectorAll('option')[elBases.selectedIndex];
-	return el ? el.value : localStorage.getItem('mymi_base');
+	return el ? el.value : config.base;
 }
 
 function refreshConnections(selectedConnection) {
@@ -734,7 +734,7 @@ function createNewConnection() {
 				.then(function (newConnectionId) {
 					refreshConnections(newConnectionId)
 						.then(function () {
-							return refreshBases(localStorage.getItem('mymi_base'));
+							return refreshBases(config.base);
 						})
 						.then(function () {
 							editor.focus();
@@ -1157,6 +1157,54 @@ function SQLNamesCompleter(tag) {
 }
 SQLNamesCompleter.prototype = Object.create(Array.prototype);
 SQLNamesCompleter.prototype.constructor = SQLNamesCompleter;
+
+var config = new (function LocalConfig() {
+	var prefix = 'mymi_';
+	var _this = this;
+	var types = {};
+	
+	function setType(value, type) {
+		if (typeof value == type)
+			return value;
+		else if (type == 'string')
+			return value + '';
+		else if (type == 'boolean')
+			return /^(true|1|on)$/i.test(value);
+		else if (type == 'number')
+			return parseFloat(value) || +value;
+		else if (type == 'array')
+			return typeof value == 'string' ? value.split(';') : [].concat(value);
+		else if (type == 'object')
+			return typeof value == 'string' ? JSON.parse(value) : null;
+		throw "Incompatible type '" + type + "'";
+	}
+	
+	this.connection_id = 0;
+	this.base = '';
+	this.query = '';
+	this.splitter_elMain = 0;
+	this.enableSnippets = true;
+	this.enableLiveAutocompletion = true;
+	
+	for (var k in this) {
+		(function (k, defaultValue) {
+			Object.defineProperty(_this, k, {
+				enumerable: true,
+				get: function () {
+					if (!types[k])
+						types[k] = typeof defaultValue == 'object' ? (defaultValue instanceof Array ? 'array' : 'object') : typeof defaultValue;
+					var value = localStorage.getItem(prefix + k);
+					return setType(value === null ? defaultValue : value, types[k]);
+				},
+				set: function (value) {
+					if (typeof value == 'object')
+						value = value instanceof Array ? value.join(';') : JSON.stringify(value);
+					localStorage.setItem(prefix + k, value);
+				},
+			});
+		})(k, this[k]);
+	}
+})();
 
 </script>
 <style>
@@ -1882,8 +1930,8 @@ editor.ace.session.setMode('ace/mode/sql');
 editor.ace.session.setUseWrapMode(true);
 editor.ace.setOptions({
 	enableBasicAutocompletion: true,
-	enableSnippets: true,
-	enableLiveAutocompletion: false
+	enableSnippets: config.enableSnippets,
+	enableLiveAutocompletion: config.enableLiveAutocompletion,
 });
 editor.ace.completers.push(editor._completers.base);
 editor.ace.completers.push(editor._completers.table);
@@ -1892,7 +1940,7 @@ editor.ace.completers.push(editor._completers.column);
 elCreateConnection.addEventListener('click', function (event) {
 	createNewConnection()
 		.then(function (newConnectionId) {
-			localStorage.setItem('mymi_connection_id', newConnectionId);
+			config.connection_id = newConnectionId;
 			refreshConnections(newConnectionId);
 			refreshStat();
 		})
@@ -1907,12 +1955,12 @@ elCreateConnection.addEventListener('click', function (event) {
 	;
 });
 elConnections.addEventListener('change', function (event) {
-	localStorage.setItem('mymi_connection_id', getSelectedConnectionId());
+	config.connection_id = getSelectedConnectionId();
 	refreshBases();
 	refreshStat();
 });
 elBases.addEventListener('change', function (event) {
-	localStorage.setItem('mymi_base', getSelectedBase());
+	config.base = getSelectedBase();
 	refreshTables();
 });
 refreshConnections().then(function () {
@@ -1956,7 +2004,7 @@ editor.addEventListener('keyup', function (event) {
 	}
 });
 editor.addEventListener('change', function (event) {
-	localStorage.setItem('mymi_query', editor.getValue());
+	config.query = editor.getValue();
 });
 
 elConsole.addEventListener('click', function (event) {
@@ -1973,7 +2021,7 @@ elLogoutButton.addEventListener('click', function () {
 	}
 });
 
-editor.setValue(localStorage.getItem('mymi_query'));
+editor.setValue(config.query);
 editor.focus();
 
 elResultset.addEventListener('scroll', updateTableHeaderScroll);
@@ -2031,7 +2079,7 @@ elMain.addEventListener('mousedown', function (event) {
 });
 elMain.addEventListener('mouseup', function (event) {
 	splitterCaptured = false;
-	localStorage.setItem('mymi_splitter_elMain', parseFloat(elQuery.style.flexBasis));
+	config.splitter_elMain = parseFloat(elQuery.style.flexBasis);
 });
 elMain.addEventListener('mousemove', function (event) {
 	if (splitterCaptured === false)
@@ -2046,7 +2094,7 @@ elMain.addEventListener('mousemove', function (event) {
 });
 
 (function () {
-	var h = parseFloat(localStorage.getItem('mymi_splitter_elMain'));
+	var h = parseFloat(config.splitter_elMain);
 	if (isNaN(h))
 		return false;
 	elQuery.style.flexBasis = h + '%';
