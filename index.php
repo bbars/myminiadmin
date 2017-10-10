@@ -810,6 +810,7 @@ function executeQuery(sql, safeRows) {
 	safeRows = safeRows || 1000;
 	editor.setDisabled(true);
 	elResultset.innerHTML = '';
+	elResultset.__resultsTables = [];
 	editor.clearCompletions('column');
 	cleanupCurrentTables();
 	elMain.classList.add('loading');
@@ -840,8 +841,10 @@ function executeQuery(sql, safeRows) {
 						info.textContent = result.info.replace(/\s{2,}/g, '\t');
 						tabContents.appendChild(info);
 					}
-					if (table)
+					if (table) {
 						tabContents.appendChild(table);
+						elResultset.__resultsTables.push(table);
+					}
 					else if (!result.info) {
 						var empty = document.createElement('div');
 						empty.classList.add('result-empty');
@@ -1441,7 +1444,7 @@ table.result.scrolled > thead {
 	/*box-shadow: #ddd 0 -0.5em, rgba(255,255,255, 0.5) 0 0.5em 0.5em;*/
 }
 table.result.fixed > thead {
-	transform: none !important;
+	transform: translateY(0) !important;
 }
 table.result tr > * {
 	border: #ddd 1px solid;
@@ -1473,7 +1476,7 @@ table.result tbody tr > * {
 
 table.result tbody tr > .type-NULL:after {
 	content: 'NULL';
-	opacity: 0.5;
+	color: #888;
 	font-style: italic;
 }
 table.result tbody tr > .type-DECIMAL,
@@ -1977,38 +1980,44 @@ elResultset.addEventListener('scroll', updateTableHeaderScroll);
 
 function updateTableHeaderScroll() {
 	// find first visible table:
-	var tables = elResultset.querySelectorAll('.tab > .tab-contents > table.result');
+	var tables = elResultset.__resultsTables;
 	if (!tables.length)
 		return;
 	var scrollTop = elResultset.scrollTop;
-	var firstTable = null;
+	var firstTableI = -1;
 	var tableY;
 	var tableH;
 	for (var i = 0; i < tables.length; i++) {
-		tables[i].classList.remove('scrolled');
-		tables[i].classList.add('fixed');
-		if (!firstTable) {
+		if (firstTableI < 0) {
 			tableY = tables[i].offsetTop;
 			tableH = tables[i].offsetHeight;
 			if (scrollTop > tableY && scrollTop < tableY + tableH) {
-				firstTable = tables[i];
+				firstTableI = i;
 			}
 		}
 	}
-	if (!firstTable)
-		return;
-	// get last-child row in tbody:
-	var lastRow = firstTable.children[1]; // tbody
-	if (!lastRow.children.length)
-		return;
-	lastRow = lastRow.children[lastRow.children.length - 1];
-	// apply offset:
-	firstTable.classList.remove('fixed');
-	firstTable.classList.add('scrolled');
-	var thead = firstTable.children[0];
-	var maxOffset = lastRow.offsetTop - thead.offsetHeight;
-	var offset = Math.max(0, Math.min(scrollTop - tableY, maxOffset));
-	thead.style.transform = 'translateY(' + offset + 'px)';
+	
+	if (firstTableI > -1 && tables[firstTableI].children[1]) {
+		tables = Array.prototype.slice.call(tables, 0);
+		var firstTable = tables.splice(firstTableI, 1)[0];
+		// get last-child row in tbody:
+		var lastRow = firstTable.children[1]; // tbody
+		if (lastRow.children.length > 0) {
+			lastRow = lastRow.children[lastRow.children.length - 1];
+			// apply offset:
+			firstTable.classList.remove('fixed');
+			firstTable.classList.add('scrolled');
+			var thead = firstTable.children[0];
+			var maxOffset = lastRow.offsetTop - thead.offsetHeight;
+			var offset = Math.max(0, Math.min(scrollTop - tableY, maxOffset));
+			thead.style.transform = 'translateY(' + offset + 'px)';
+		}
+	}
+	// except first table:
+	for (var i = 0; i < tables.length; i++) {
+		tables[i].classList.remove('scrolled');
+		tables[i].classList.add('fixed');
+	}
 }
 
 var splitterCaptured = false;
