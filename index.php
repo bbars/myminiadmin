@@ -1715,6 +1715,7 @@ body.modal-stack-show .modal-stack {
 	box-shadow: rgba(0,0,0, 0.15) 1px 1px 1px 0 inset;
 	max-height: 50vh;
 	overflow: auto;
+	white-space: pre-wrap;
 	word-break: break-word;
 }
 #elBlobValueEncoded > * {
