@@ -761,7 +761,7 @@ function refreshBases(selectedBase) {
 		elBases.__bases = bases;
 		for (var i = 0; i < resultset[0].rows.length; i++) {
 			var base = resultset[0].rows[i];
-			editor.addCompletion(base, 'base');
+			editor.addCompletion('base', base);
 			bases.push(base);
 			var option = document.createElement('option');
 			option.value = base;
@@ -777,15 +777,19 @@ function refreshBases(selectedBase) {
 function refreshTables() {
 	var selectedConnection = getSelectedConnectionId();
 	var selectedBase = getSelectedBase();
-	var sql = 'SHOW TABLES';
+	var sql = [
+		'SHOW TABLES',
+		'SELECT COLUMN_NAME FROM `information_schema`.COLUMNS WHERE TABLE_SCHEMA=\'' + selectedBase + '\'',
+	].join(';\n');
 	return apiCall('query', selectedConnection, selectedBase, sql).promise.then(function (resultset) {
 		var tables = [];
 		editor.clearCompletions('table');
+		editor.clearCompletions('column');
 		elTables.innerHTML = '';
 		elTables.__tables = tables;
 		for (var i = 0; i < resultset[0].rows.length; i++) {
 			var table = resultset[0].rows[i];
-			editor.addCompletion(table, 'table');
+			editor.addCompletion('table', table);
 			tables.push(table);
 			var div = document.createElement('div');
 			div.classList.add('table');
@@ -796,6 +800,10 @@ function refreshTables() {
 			a.textContent = table;
 			div.appendChild(a);
 			elTables.appendChild(div);
+		}
+		if (resultset[1] && resultset[1].rows.length) {
+			for (var i = 0; i < resultset[1].rows.length; i++)
+				editor.addCompletion('column', resultset[1].rows[i][0]);
 		}
 		return tables;
 	});
@@ -811,7 +819,6 @@ function executeQuery(sql, safeRows) {
 	editor.setDisabled(true);
 	elResultset.innerHTML = '';
 	elResultset.__resultsTables = [];
-	editor.clearCompletions('column');
 	cleanupCurrentTables();
 	elMain.classList.add('loading');
 	return apiCall('query', selectedConnection, selectedBase, sql, safeRows, true).promise
@@ -891,7 +898,7 @@ function createTableFromResult(result) {
 			setCurrentTable(result.fields[x].orgtable);
 		}
 		if (result.fields[x].orgtable && result.fields[x].orgname) {
-			editor.addCompletion(result.fields[x].orgname, 'column');
+			editor.addCompletion('column', result.fields[x].orgname);
 			hint.push('`'+ result.fields[x].orgtable +'`.`'+ result.fields[x].orgname +'`');
 			if (result.fields[x].name != result.fields[x].orgname)
 				hint.push('AS `' + result.fields[x].name + '`');
@@ -1914,7 +1921,7 @@ var editor = {
 			this._completers[tag].clear();
 		}
 	},
-	addCompletion: function (word, tag) {
+	addCompletion: function (tag, word) {
 		if (this._completers[tag])
 			this._completers[tag].push(word);
 	},
@@ -2176,7 +2183,7 @@ snippet seq\n\
 	create sequence ${1:name} start with ${2:1} increment by ${3:1} minvalue ${4:1};\n\
 snippet s*\n\
 	select * from ${1:table};\n\
-snippet tru\n\
+snippet trun\n\
 	truncate ${1:table};\n\
 ";
 exports.scope = "sql";
