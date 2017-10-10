@@ -779,12 +779,14 @@ function refreshTables() {
 	var selectedBase = getSelectedBase();
 	var sql = [
 		'SHOW TABLES',
-		'SELECT COLUMN_NAME FROM `information_schema`.COLUMNS WHERE TABLE_SCHEMA=\'' + selectedBase + '\'',
+		"SELECT COLUMN_NAME FROM `information_schema`.COLUMNS WHERE TABLE_SCHEMA='" + selectedBase + "'",
+		"SELECT `ROUTINES`.ROUTINE_TYPE, `ROUTINES`.SPECIFIC_NAME, GROUP_CONCAT(CONCAT_WS(' ', `PARAMETERS`.PARAMETER_NAME, `PARAMETERS`.DATA_TYPE) ORDER BY `PARAMETERS`.ORDINAL_POSITION ASC SEPARATOR '|') FROM `information_schema`.`ROUTINES` LEFT JOIN `information_schema`.`PARAMETERS` ON (`PARAMETERS`.SPECIFIC_SCHEMA = `ROUTINES`.ROUTINE_SCHEMA AND `PARAMETERS`.SPECIFIC_NAME = `ROUTINES`.SPECIFIC_NAME) WHERE `PARAMETERS`.PARAMETER_NAME IS NOT NULL AND `ROUTINES`.ROUTINE_SCHEMA = '" + selectedBase + "' GROUP BY `PARAMETERS`.SPECIFIC_NAME",
 	].join(';\n');
 	return apiCall('query', selectedConnection, selectedBase, sql).promise.then(function (resultset) {
 		var tables = [];
 		editor.clearCompletions('table');
 		editor.clearCompletions('column');
+		editor.clearSnippets();
 		elTables.innerHTML = '';
 		elTables.__tables = tables;
 		for (var i = 0; i < resultset[0].rows.length; i++) {
@@ -804,6 +806,21 @@ function refreshTables() {
 		if (resultset[1] && resultset[1].rows.length) {
 			for (var i = 0; i < resultset[1].rows.length; i++)
 				editor.addCompletion('column', resultset[1].rows[i][0]);
+		}
+		if (resultset[2] && resultset[2].rows.length) {
+			for (var i = 0; i < resultset[2].rows.length; i++) {
+				var row = resultset[2].rows[i];
+				var type = row[0];
+				var name = row[1];
+				var params = row[2] && row[2].split('|') || [];
+				params = params.map(function (v, i) {
+					return '${' + (i+1) + ':' + v + '}';
+				});
+				var snippet = name + '(' + params.join(', ') + ')';
+				if (type.toLowerCase() == 'procedure')
+					snippet = 'CALL ' + snippet + ';';
+				editor.addSnippet(name, snippet);
+			}
 		}
 		return tables;
 	});
@@ -1923,8 +1940,26 @@ var editor = {
 		}
 	},
 	addCompletion: function (tag, word) {
-		if (this._completers[tag])
+		if (this._completers[tag] && this._completers[tag].indexOf(word) < 0) {
 			this._completers[tag].push(word);
+		}
+	},
+	clearSnippets: function () {
+		var sm = ace.require('ace/snippets').snippetManager;
+		for (var i = sm.snippetMap.sql.length - 1; i > -1; i--) {
+			var snippet = sm.snippetMap.sql[i];
+			if (snippet.custom) {
+				delete sm.snippetNameMap.sql[snippet.name];
+				sm.snippetMap.sql.splice(i, 1);
+			}
+		}
+	},
+	addSnippet: function (name, body) {
+		var sm = ace.require('ace/snippets').snippetManager;
+		var snippet = sm.parseSnippetFile('snippet ' + name + "\n\t" + body)[0];
+		snippet.custom = true;
+		sm.snippetMap.sql.push(snippet);
+		sm.snippetNameMap.sql[snippet.name] = snippet;
 	},
 	_completers: {
 		base: new SQLNamesCompleter('base'),
