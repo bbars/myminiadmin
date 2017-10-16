@@ -139,6 +139,7 @@ class MultipartFile {
 
 class Api {
 	const CHARSETNR_UTF8 = 33;
+	const TMP_FILE_PREFIX = 'mymi_';
 	protected static $mysqliOptions = array(
 		MYSQLI_OPT_CONNECT_TIMEOUT => 5,
 		// MYSQLI_INIT_COMMAND => "SET NAMES 'utf8'; SET CHARACTER SET 'utf8'",
@@ -170,6 +171,13 @@ class Api {
 		if (!$cfg) {
 			throw new MyError('UNDEFINED_CONNECTION');
 		}
+		
+		$authTimeFile = sys_get_temp_dir() . '/' . self::TMP_FILE_PREFIX . 'auth_attempt';
+		$authLastAttempt = is_file($authTimeFile) ? (int) file_get_contents($authTimeFile) : 0;
+		if (time() - $authLastAttempt < 5) {
+			throw new MyError('TOO_MANY_REQUESTS', "Retry in " . (5 - (time() - $authLastAttempt)) . ' sec.');
+		}
+		
 		$cfg = self::normDbCfg($cfg);
 		if ($cfg['host'] == 'localhost') {
 			// workaround port ignore issue: https://lists.mysql.com/mysql/60815
@@ -187,6 +195,7 @@ class Api {
 				// pass
 			break;
 			case 1045:
+				file_put_contents($authTimeFile, time());
 				throw new MyError('MYSQL_WRONG_CREDENTIALS', "Connection could not be established: #{$mysqli->connect_errno} {$mysqli->connect_error}");
 			default:
 				throw new MyError('MYSQL_CONNECT_ERROR', "Connection could not be established: #{$mysqli->connect_errno} {$mysqli->connect_error}");
@@ -355,6 +364,7 @@ class MyError extends Exception {
 		'MYSQL_WRONG_CREDENTIALS',
 		'MYSQL_ERROR',
 		'UNABLE_TO_USE_RESULT',
+		'TOO_MANY_REQUESTS',
 	];
 	protected $code = '';
 	
@@ -587,6 +597,7 @@ function apiCall(fn, params) {
 			break;
 			case 'NATIVE_ERROR':
 			case 'MYSQL_CONNECT_ERROR':
+			case 'TOO_MANY_REQUESTS':
 				showError(error, true);
 			break;
 			case 'MYSQL_WRONG_CREDENTIALS':
@@ -611,24 +622,20 @@ function promptConnection() {
 	var errors = [];
 	var s = '';
 	do {
-		s = prompt("Connection string\nlike user:password@host:port (password & port aren't required)", s);
+		s = prompt("Connection string\nlike user:password@host:port\n\nYou can omit any component, default is root:@localhost:3306)", s);
 		if (typeof s != 'string')
 			break;
-		var m = /^([^:@]*)(?::([^@]*))?@([^:]*)(?::([^\/]+))?$/.exec(s);
+		var m = /^([^:@]*)(?::([^@]*))?(?:@([^:]*)(?::([^\/]+))?)?$/.exec(s);
 		errors = [];
 		if (!m)
 			errors.push('Please provide connection string in format:\nuser:password@host:port');
 		else {
 			res = {
-				user: m[1],
-				pass: m[2],
-				host: m[3],
+				user: m[1] || 'root',
+				pass: m[2] || '',
+				host: m[3] || 'localhost',
 				port: m[4] ? +m[4] : '',
 			};
-			if (!res.user)
-				errors.push('Username not specified');
-			if (!res.host)
-				errors.push('Host not specified');
 			if (res.port && (isNaN(res.port) || res.port % 1 || res.port <= 0 || res.port > 65535))
 				errors.push('Port should be an integer between 1 and 65535');
 		}
@@ -1034,15 +1041,15 @@ function refreshStat() {
 		refreshStatXhr.abort();
 	refreshStatXhr = apiCall('stat', selectedConnection, true);
 	return refreshStatXhr.promise
-		.catch(function (error) {
-			// pass
-		})
 		.then(function (result) {
 			elStat.textContent = result.stat.join('\n');
 			elStat.innerHTML = '<span>' + elStat.innerHTML.split('\n').join('</span>\n<span>') + '</span>';
 			elStatProcesslist.innerHTML = '';
 			elStatProcesslist.appendChild(createTableFromResult(result.processlist));
 			return result;
+		})
+		.catch(function (error) {
+			// pass
 		})
 	;
 }
@@ -1693,13 +1700,15 @@ body.modal-stack-show .modal-stack {
 	cursor: row-resize;
 	flex: 0 0 3px;
 	min-height: 3px;
+	position: relative;
 }
 .splitter:after {
 	content: '';
 	position: absolute;
 	width: 100%;
 	margin: -1px;
-	height: 1em;
+	height: 1.5em;
+	top: -0.75em;
 	z-index: 2;
 }
 .splitter:hover {
@@ -2072,7 +2081,7 @@ elResultset.addEventListener('scroll', updateTableHeaderScroll);
 function updateTableHeaderScroll() {
 	// find first visible table:
 	var tables = elResultset.__resultsTables;
-	if (!tables.length)
+	if (!tables || !tables.length)
 		return;
 	var scrollTop = elResultset.scrollTop;
 	var firstTableI = -1;
