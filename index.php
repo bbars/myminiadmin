@@ -1728,8 +1728,8 @@ body.modal-stack-show .modal-stack {
 	position: absolute;
 	width: 100%;
 	margin: -1px;
-	height: 1.5em;
-	top: -0.75em;
+	height: 1em;
+	top: 0;
 	z-index: 2;
 }
 .splitter:hover {
