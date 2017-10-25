@@ -1254,6 +1254,27 @@ body,
 body * {
 	max-height: 999999px;
 }
+body.dragover:after {
+	content: 'Drop SQL files here';
+	position: fixed;
+	display: block;
+	pointer-events: none;
+	font-size: 30px;
+	left: 1em;
+	top: 1em;
+	bottom: 1em;
+	right: 1em;
+	background: rgba(168,168,168,0.75);
+	border: rgba(0,0,0, 0.5) 0.15em dashed;
+	color: #fff;
+	text-shadow: rgba(0,0,0,0.5) 0 1px 1px;
+	background-clip: padding-box;
+	text-align: center;
+	z-index: 9999;
+	line-height: 2em;
+	line-height: 70vh;
+	line-height: calc(100vh - 2.3em);
+}
 
 .flex-row {
 	display: flex;
@@ -2153,6 +2174,64 @@ elMain.addEventListener('mousemove', function (event) {
 	elResultset.style.flexBasis = (100 - h) + '%';
 	window.dispatchEvent(new Event('resize'));
 })();
+
+document.addEventListener('dragover', function (event) {
+	event.preventDefault();
+	document.body.classList.add('dragover');
+	return false;
+}, false);
+document.addEventListener('dragleave', function (event) {
+	event.preventDefault();
+	document.body.classList.remove('dragover');
+	return false;
+}, false);
+
+function readFileAsText(file, encoding) {
+	return new Promise(function (resolve, reject) {
+		var reader = new FileReader();
+		reader.onload = function (e) {
+			var result = new String(reader.result);
+			result.name = file.name;
+			result.type = file.type;
+			result.size = file.size;
+			resolve(result);
+		};
+		reader.onerror = reject;
+		reader.readAsText(file, encoding);
+	});
+}
+
+document.addEventListener('drop', function (event) {
+	event.preventDefault();
+	document.body.classList.remove('dragover');
+	var maxFileSize = 1 * 1024 * 1024;
+	var files = event.dataTransfer.files;
+	var texts = [];
+	var sql = event.dataTransfer.getData('text/plain');
+	if (sql)
+		texts.push(sql);
+	
+	for (var i = 0; i < files.length; i++) {
+		var file = files[i];
+		if (file.size > maxFileSize) {
+			console.warn("File '" + file.name + "' is too large (" + (file.size/1024/1024).toFixed() + "M > " + (maxFileSize/1024/1024).toFixed() + "M)");
+			continue;
+		}
+		texts.push(readFileAsText(file));
+	}
+	
+	Promise.all(texts).then(function (texts) {
+		texts = texts.map(function (content) {
+			return (content.name ? '-- ######## ' + content.name + ' ########\n' : '') + content;
+		}).join('\n\n');
+		if (texts.length > maxFileSize && !confirm("Dropped contents is too large (" + (texts.length/1024/1024).toFixed(2) + "M)! Are you sure?"))
+			return;
+		editor.setValue(texts).focus();
+	}, console.error);
+	
+	return false;
+}, false);
+
 
 </script>
 <link rel="stylesheet" href="?part=style">
