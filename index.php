@@ -833,6 +833,96 @@ function refreshTables() {
 	});
 }
 
+function parseSql(s) {
+	var res = [];
+	var reAny = /`|'|"/g;
+	var reClosings = {
+		'`': /(`+)/g,
+		'"': /([\\"]+)/g,
+		"'": /([\\']+)/g,
+	};
+	var reCommented = /--+\s+[^\r\n]*$/;
+	var m;
+	var offset = false;
+	var cap = false;
+	var cap2;
+	while (s) {
+		m = reAny.exec(s);
+		if (!m)
+			break;
+		
+		cap = m[0];
+		offset = m.index;
+		sub = s.substr(0, offset);
+		
+		if (reCommented.test(sub)) {
+			reAny.lastIndex = s.search(/[\r\n]/);
+			continue;
+		}
+		res.push(sub);
+		s = s.substr(offset);
+		reAny.lastIndex = 0;
+		offset = false;
+		reClosings[cap].lastIndex = cap.length;
+		while (m = reClosings[cap].exec(s)) {
+			if (m[1].length % 2 == 1) {
+				cap2 = m[1];
+				offset = m.index + cap2.length;
+				break;
+			}
+		}
+		if (offset === false) {
+			throw new Error("Unable to find matching enclosing character opened at position " + res.join('').length);
+		}
+		res.push(s.substr(0, offset));
+		s = s.substr(offset);
+	}
+	if (s)
+		res.push(s);
+	
+	var parsed = res;
+	var counter = 0;
+	var placeholders = {};
+	for (var i = 0; i < parsed.length; i += 2) {
+		var re = /(\?)|:([a-zA-Z\d_]+)/g;
+		var s = parsed[i];
+		while (m = re.exec(s)) {
+			placeholders[m[1] ? counter++ : m[2]] = true;
+		}
+	}
+	
+	return {
+		parsed: parsed,
+		placeholders: Object.keys(placeholders),
+		sql: parsed.join(''),
+	};
+}
+
+function escapeSqlString(s, quote) {
+	if (s === null)
+		return 'NULL';
+	if (typeof s == 'boolean')
+		return s ? '1' : '0';
+	if (typeof s == 'number')
+		return s.toString();
+	quote = quote || '"';
+	return quote + s.split('\\').join('\\\\').split(quote).join('\\' + quote) + quote;
+}
+
+function buildSqlStatement(statement, values) {
+	var sql = statement.parsed;
+	var counter = 0;
+	var re = /(\?)|:([a-zA-Z\d_]+)/g;
+	for (var i = 0; i < sql.length; i += 2) {
+		re.lastIndex = 0;
+		sql[i] = sql[i].replace(re, function (m0, m1, m2) {
+			var key = m1 ? counter++ : m2;
+			return typeof values[key] != 'undefined' ? escapeSqlString(values[key]) : m0;
+		});
+	}
+	return sql.join('');
+}
+
 function executeQuery(sql, safeRows) {
 	var selectedConnection = getSelectedConnectionId();
 	var selectedBase = getSelectedBase();
@@ -840,12 +930,30 @@ function executeQuery(sql, safeRows) {
 	var thenRefreshBases = !!matches[1];
 	var thenRefreshTables = !!matches[2];
 	safeRows = safeRows || 1000;
-	editor.setDisabled(true);
-	elResultset.innerHTML = '';
-	elResultset.__resultsTables = [];
-	cleanupCurrentTables();
-	elMain.classList.add('loading');
-	return apiCall('query', selectedConnection, selectedBase, sql, safeRows, true).promise
+	
+	function run(sql) {
+		editor.setDisabled(true);
+		elResultset.innerHTML = '';
+		elResultset.__resultsTables = [];
+		cleanupCurrentTables();
+		elMain.classList.add('loading');
+		return apiCall('query', selectedConnection, selectedBase, sql, safeRows, true).promise;
+	}
+	
+	return new Promise(function (resolve, reject) {
+			var statement = parseSql(sql);
+			if (!statement.placeholders.length)
+				resolve(run(sql));
+			else {
+				promptSqlValues(statement.placeholders)
+					.then(function (values) {
+						var sql = buildSqlStatement(statement, values);
+						resolve(run(sql));
+					})
+					.catch(reject)
+				;
+			}
+		})
 		.catch(function (error) {
 			showError(error);
 		})
@@ -1701,6 +1809,9 @@ body.modal-stack-show .modal-stack {
 .modal-stack > :last-child {
 	display: inline-block;
 }
+.modal-stack > .modal-full:last-child {
+	display: block;
+}
 
 #elConsole {
 	display: none;
@@ -1743,6 +1854,9 @@ body.modal-stack-show .modal-stack {
 	top: 0;
 	height: 100%;
 }
+.text-right {
+	text-align: right;
+}
 #elResultset {
 	min-height: 2em;
 }
@@ -1769,6 +1883,30 @@ body.modal-stack-show .modal-stack {
 	display: inline-block;
 	margin-right: 0.5em;
 }
+
+#elSqlValuesSet {
+	display: table;
+	width: 100%;
+}
+#elSqlValuesSet > * {
+	display: table-row;
+	vertical-align: baseline;
+}
+#elSqlValuesSet > * > * {
+	display: table-cell;
+}
+#elSqlValuesSet > * > label {
+	padding-right: 1em;
+	text-align: right;
+	width: 1px;
+	max-width: 50%;
+}
+#elSqlValuesSet > * > * > input {
+	width: 100%;
+	margin: 0.25em 0;
+}
+
+
 
 </style>
 </head>
@@ -1925,6 +2063,81 @@ body.modal-stack-show .modal-stack {
 			Modal.show(elModalBlobValue);
 		});
 	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded);
+	
+	</script>
+</div>
+<div id="elModalSqlValues" class="modal modal-full">
+	<span class="modal-close"></span>
+	<h2>SQL values</h2>
+	<form id="elSqlValuesForm">
+		<div id="elSqlValuesSet">
+			<div>
+				<label></label>
+				<div>
+					<input type="text" name="" title="JSON or plain string" />
+				</div>
+			</div>
+		</div>
+		<div class="m-t text-right">
+			<button type="submit">OK</button>
+		</div>
+	</form>
+	<script>
+	
+	(function (context, elModalSqlValues, elSqlValuesForm, elSqlValuesSet) {
+		var savedValues = {};
+		var elSqlValueTemplate = elSqlValuesSet.children[0];
+		
+		context.promptSqlValues = function (placeholders) {
+			return new Promise(function (resolve, reject) {
+				while (elSqlValuesSet.children.length)
+					elSqlValuesSet.removeChild(elSqlValuesSet.children[0]);
+				
+				for (var i = 0; i < placeholders.length; i++) {
+					var elSqlValue = elSqlValueTemplate.cloneNode(true);
+					var k = placeholders[i];
+					elSqlValue.querySelector('label').textContent = k;
+					var input = elSqlValue.querySelector('input');
+					input.name = k;
+					input.value = typeof savedValues[k] != 'undefined' ? JSON.stringify(savedValues[k]) : '';
+					elSqlValuesSet.appendChild(elSqlValue);
+				}
+				
+				function onModalEvent(event) {
+					if (event.type == 'submit') {
+						try {
+							var values = {};
+							var inputs = elSqlValuesSet.querySelectorAll('input');
+							for (var i = 0; i < inputs.length; i++) {
+								var input = inputs[i];
+								var value = input.value;
+								try {
+									value = value === '' ? null : JSON.parse(value);
+								}
+								catch (e) {
+									// keep value as a string
+								}
+								values[input.name] = savedValues[input.name] = value;
+							}
+							resolve(values);
+							Modal.hide(elModalSqlValues);
+						}
+						catch (e) {
+							alert(e);
+							elSqlValuesJson.ace.focus();
+						}
+					}
+					else if (event.type == 'modal-hide') {
+						elSqlValuesForm.removeEventListener('submit', onModalEvent);
+						elModalSqlValues.removeEventListener('modal-hide', onModalEvent);
+					}
+				}
+				elSqlValuesForm.addEventListener('submit', onModalEvent);
+				elModalSqlValues.addEventListener('modal-hide', onModalEvent);
+				Modal.show(elModalSqlValues);
+			});
+		};
+	})(this, elModalSqlValues, elSqlValuesForm, elSqlValuesSet);
 	
 	</script>
 </div>
