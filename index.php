@@ -856,7 +856,7 @@ function parseSql(s) {
 		sub = s.substr(0, offset);
 		
 		if (reCommented.test(sub)) {
-			reAny.lastIndex = s.search(/[\r\n]/);
+			reAny.lastIndex = offset + s.substr(offset).search(/[\r\n]/);
 			continue;
 		}
 		res.push(sub);
