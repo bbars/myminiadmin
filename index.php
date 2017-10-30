@@ -247,6 +247,18 @@ class Api {
 		}
 	}
 	
+	protected static function utf8_encode($data) {
+		if (function_exists('mb_convert_encoding'))
+			return mb_convert_encoding($data, 'UTF-8', 'auto');
+		elseif (function_exists('utf8_encode'))
+			return utf8_encode($data);
+		elseif (function_exists('iconv'))
+			return iconv('ascii', 'utf8', $data);
+		else {
+			throw new Exception("Can't encode UTF-8", 500);
+		}
+	}
+	
 	public static function query($dbCfg, $base, $sql, $safeRows = 1000, $encodeUtf8 = false) {
 		$mysqli = self::getDb($dbCfg, $base);
 		$success = $mysqli->multi_query($sql);
@@ -283,7 +295,7 @@ class Api {
 				if ($encodeUtf8 && $binaryCols) {
 					foreach ($binaryCols as $i) {
 						foreach ($result['rows'] as &$row)
-							$row[$i] = utf8_encode($row[$i]);
+							$row[$i] = self::utf8_encode($row[$i]);
 						unset($row);
 					}
 				}
