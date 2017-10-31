@@ -249,7 +249,7 @@ class Api {
 	
 	protected static function utf8_encode($data) {
 		if (function_exists('mb_convert_encoding'))
-			return mb_convert_encoding($data, 'UTF-8', 'auto');
+			return mb_convert_encoding($data, 'UTF-8', 'latin1');
 		elseif (function_exists('utf8_encode'))
 			return utf8_encode($data);
 		elseif (function_exists('iconv'))
