@@ -1330,7 +1330,7 @@ var config = new (function LocalConfig() {
 		throw "Incompatible type '" + type + "'";
 	}
 	
-	this.connection_id = 0;
+	this.connection_id = '';
 	this.base = '';
 	this.query = '';
 	this.splitter_elMain = 0;
@@ -2400,12 +2400,22 @@ elMain.addEventListener('mousemove', function (event) {
 	window.dispatchEvent(new Event('resize'));
 })();
 
+elQuery.addEventListener('dragstart', function (event) {
+	elQuery.dragging = true;
+}, false);
+elQuery.addEventListener('dragend', function (event) {
+	elQuery.dragging = false;
+}, false);
 document.addEventListener('dragover', function (event) {
+	if (elQuery.dragging)
+		return;
 	event.preventDefault();
 	document.body.classList.add('dragover');
 	return false;
 }, false);
 document.addEventListener('dragleave', function (event) {
+	if (elQuery.dragging)
+		return;
 	event.preventDefault();
 	document.body.classList.remove('dragover');
 	return false;
@@ -2427,14 +2437,16 @@ function readFileAsText(file, encoding) {
 }
 
 document.addEventListener('drop', function (event) {
+	if (elQuery.dragging)
+		return;
 	event.preventDefault();
 	document.body.classList.remove('dragover');
 	var maxFileSize = 1 * 1024 * 1024;
 	var files = event.dataTransfer.files;
 	var texts = [];
-	var sql = event.dataTransfer.getData('text/plain');
-	if (sql)
-		texts.push(sql);
+	var plaintext = event.dataTransfer.getData('text/plain');
+	if (plaintext)
+		texts.push(plaintext);
 	
 	for (var i = 0; i < files.length; i++) {
 		var file = files[i];
@@ -2451,7 +2463,9 @@ document.addEventListener('drop', function (event) {
 		}).join('\n\n');
 		if (texts.length > maxFileSize && !confirm("Dropped contents is too large (" + (texts.length/1024/1024).toFixed(2) + "M)! Are you sure?"))
 			return;
-		editor.setValue(texts).focus();
+		if (texts)
+			editor.setValue(texts);
+		editor.focus();
 	}, console.error);
 	
 	return false;
