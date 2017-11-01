@@ -2405,7 +2405,7 @@ document.addEventListener('keydown', function (event) {
 		event.preventDefault();
 		
 		var value = editor.getValue();
-		if (!value)
+		if (!value.trim())
 			return false;
 		
 		var name = (value.split(/\s/, 2)[0] || '').trim().toLowerCase();
