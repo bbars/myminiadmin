@@ -1268,7 +1268,7 @@ function processLocationParams(paramsStr, execute) {
 	var params = {};
 	for (var i = 0; i < paramsList.length; i++) {
 		var param = paramsList[i].split('=', 2);
-		params[param[0]] = param[1];
+		params[decodeURIComponent(param[0])] = decodeURIComponent(param[1]);
 	}
 	
 	if (params.sql) {
