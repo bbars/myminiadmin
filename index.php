@@ -2400,6 +2400,25 @@ elMain.addEventListener('mousemove', function (event) {
 	window.dispatchEvent(new Event('resize'));
 })();
 
+document.addEventListener('keydown', function (event) {
+	if (event.keyCode == 83 && event.ctrlKey && !event.shiftKey && !event.altKey) {
+		event.preventDefault();
+		
+		var value = editor.getValue();
+		if (!value)
+			return false;
+		
+		var name = (value.split(/\s/, 2)[0] || '').trim().toLowerCase();
+		var d = new Date();
+		var blob = new Blob([value], {type: 'text/sql'});
+		var a = document.createElement('a');
+		a.download = getSelectedBase().toLowerCase() + (name ? '-' + name : '') + '-' + (d.getTime() / 1000 | 0) + '.sql';
+		a.href = URL.createObjectURL(blob);
+		a.click();
+		return false;
+	}
+}, false);
+
 elQuery.addEventListener('dragstart', function (event) {
 	elQuery.dragging = true;
 }, false);
