@@ -806,6 +806,9 @@ function refreshTables() {
 		editor.clearCompletions('table');
 		editor.clearCompletions('column');
 		editor.clearSnippets();
+		var currentTables = Array.prototype.slice.call(elTables.querySelectorAll('.table.current'), 0).map(function (elTable) {
+			return elTable.dataset.table;
+		});
 		elTables.innerHTML = '';
 		elTables.__tables = tables;
 		for (var i = 0; i < resultset[0].rows.length; i++) {
@@ -814,6 +817,8 @@ function refreshTables() {
 			tables.push(table);
 			var div = document.createElement('div');
 			div.classList.add('table');
+			if (currentTables.indexOf(table) > -1)
+				div.classList.add('current');
 			div.value = table;
 			div.dataset.table = table;
 			var a = document.createElement('a');
@@ -1144,7 +1149,8 @@ function cleanupCurrentTables() {
 
 function setCurrentTable(table) {
 	var elTable = elTables.querySelector('.table[data-table="' + table + '"]');
-	elTable.classList.add('current');
+	if (elTable)
+		elTable.classList.add('current');
 	return elTable;
 }
 
