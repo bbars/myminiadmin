@@ -261,14 +261,13 @@ class Api {
 	
 	public static function query($dbCfg, $base, $sql, $safeRows = 1000, $encodeUtf8 = false) {
 		$mysqli = self::getDb($dbCfg, $base);
-		$success = $mysqli->multi_query($sql);
 		$safeRows = (int) $safeRows;
+		$sql = "SET SQL_SELECT_LIMIT = $safeRows + 1; $sql";
+		$success = $mysqli->multi_query($sql);
 		
 		$resultset = [];
 		do {
-			if ($resultset) {
-				$success = $mysqli->next_result();
-			}
+			$success = $mysqli->next_result(); // skip set sql_select_limit
 			
 			$result = array(
 				'info' => $mysqli->info,
