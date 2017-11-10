@@ -1469,6 +1469,61 @@ body.dragover:after {
 }
 
 
+@media all and (max-width: 30em) {
+	#elAside {
+		position: fixed;
+		left: calc(-100vw + 3em);
+		top: 0;
+		height: 100vh;
+		width: calc(100vw - 3em);
+		z-index: 8;
+		box-shadow: rgba(0,0,0,0.5) 0 0 0.2em;
+	}
+	#elAside.showing {
+		left: 0;
+	}
+	
+	#elAside.showing:before {
+		content: '';
+		background: rgba(0,0,0,0.9);
+		opacity: 0.5;
+		position: absolute;
+		left: 100%;
+		top: 0;
+		width: 100vw;
+		height: 100%;
+	}
+	
+	#elAside:after {
+		content: '\232a';
+		position: absolute;
+		left: 100%;
+		bottom: 1em;
+		background: rgba(0,0,0,0.1);
+		color: #000;
+		font-size: 3em;
+		text-align: center;
+		width: 0.5em;
+		height:1.5em;
+		line-height: 1.25em;
+		border-radius: 0 0.1em 0.1em 0;
+	}
+	#elAside.showing:after {
+		content: '\2329';
+		position: absolute;
+		background: transparent;
+		left: 100%;
+		bottom: 50%;
+		color: #fff;
+		font-size: 3em;
+		width: 1em;
+		height: 1em;
+		line-height: 0em;
+		text-align: center;
+	}
+}
+
+
 input,
 select,
 textarea,
@@ -2495,6 +2550,37 @@ document.addEventListener('drop', function (event) {
 	return false;
 }, false);
 
+(function () {
+	var capture = null;
+	elAside.addEventListener('touchstart', function (event) {
+		capture = {
+			touch: event.touches[0],
+			left: elAside.offsetLeft / window.innerWidth,
+			showing: elAside.classList.contains('showing'),
+		};
+		elAside.style.transition = '';
+	});
+	elAside.addEventListener('touchmove', function (event) {
+		var touch = event.touches[0];
+		var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
+		if (Math.abs(x) > 0) {
+			var left = (capture.left - x) * 100;
+			var minLeft = -(elAside.clientWidth / window.innerWidth) * 100;
+			elAside.style.left = Math.min(0, Math.max(left, minLeft)) + '%';
+		}
+	});
+	elAside.addEventListener('touchend', function (event) {
+		var touch = event.changedTouches[0];
+		var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
+		elAside.style.transition = 'left 0.2s ease';
+		elAside.style.left = null;
+		var show = capture.showing;
+		if (Math.abs(x) > 0.3)
+			show = x < 0;
+		elAside.classList.toggle('showing', show);
+		capture = null;
+	});
+})();
 
 </script>
 <link rel="stylesheet" href="?part=style">
