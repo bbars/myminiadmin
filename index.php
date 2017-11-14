@@ -253,7 +253,7 @@ class Api {
 		elseif (function_exists('utf8_encode'))
 			return utf8_encode($data);
 		elseif (function_exists('iconv'))
-			return iconv('ascii', 'utf8', $data);
+			return iconv('ISO8859-1', 'utf8', $data);
 		else {
 			throw new Exception("Can't encode UTF-8", 500);
 		}
