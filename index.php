@@ -1424,12 +1424,14 @@ body.dragover:after {
 #elMainContainer {
 	flex-wrap: wrap-reverse;
 	flex-basis: 90%;
+	max-height: 100%;
 }
 
 #elAside {
 	min-width: 10em;
 	background: #eee;
 	flex: 1 15%;
+	max-height: 100%;
 }
 #elAside > * {
 	padding: 1em;
@@ -1438,6 +1440,7 @@ body.dragover:after {
 	flex: 1 70%;
 	overflow: auto;
 	min-width: 50%;
+	max-height: 100%;
 }
 
 #elConsole {
