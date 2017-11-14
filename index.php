@@ -1081,7 +1081,7 @@ function createTableFromResult(result) {
 				var td = document.createElement('td');
 				var type = result.fields[x].type;
 				td.className = 'type-' + type;
-				if (value === null) {
+				if (value === null || (type == 'TIMESTAMP' && value === '')) {
 					td.className += ' type-NULL';
 				}
 				td.dataset.type = type;
