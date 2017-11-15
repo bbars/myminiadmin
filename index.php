@@ -2361,7 +2361,7 @@ elTables.addEventListener('click', function (event) {
 });
 
 editor.addEventListener('keyup', function (event) {
-	if (~[10, 13].indexOf(event.charCode || event.keyCode) && event.ctrlKey) {
+	if (~[10, 13].indexOf(event.charCode || event.keyCode) && (event.ctrlKey ^ event.shiftKey)) {
 		executeQuery(editor.getValue());
 	}
 });
