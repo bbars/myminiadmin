@@ -140,9 +140,12 @@ class MultipartFile {
 class Api {
 	const CHARSETNR_UTF8 = 33;
 	protected static $encodeUtf8Types = array(
-		'STRING' => 1,
-		'BLOB' => 1,
-		'TEXT' => 1,
+		MYSQLI_TYPE_TINY_BLOB => 1,
+		MYSQLI_TYPE_MEDIUM_BLOB => 1,
+		MYSQLI_TYPE_LONG_BLOB => 1,
+		MYSQLI_TYPE_BLOB => 1,
+		MYSQLI_TYPE_VAR_STRING => 1,
+		MYSQLI_TYPE_STRING => 1,
 	);
 	const TMP_FILE_PREFIX = 'mymi_';
 	protected static $mysqliOptions = array(
@@ -287,9 +290,9 @@ class Api {
 				$result['fields'] = $mysqliResult->fetch_fields();
 				$binaryCols = [];
 				foreach ($result['fields'] as $i => $field) {
-					$field->type = self::mysqliType($field->type);
 					if ($field->charsetnr != self::CHARSETNR_UTF8 && isset(self::$encodeUtf8Types[$field->type]))
 						$binaryCols[] = $i;
+					$field->type = self::mysqliType($field->type);
 				}
 				unset($field);
 				
