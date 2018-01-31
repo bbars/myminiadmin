@@ -2498,14 +2498,14 @@ elQuery.addEventListener('dragend', function (event) {
 	elQuery.dragging = false;
 }, false);
 document.addEventListener('dragover', function (event) {
-	if (elQuery.dragging)
+	if (elQuery.dragging || event.target.classList.contains('ace_content'))
 		return;
 	event.preventDefault();
 	document.body.classList.add('dragover');
 	return false;
 }, false);
 document.addEventListener('dragleave', function (event) {
-	if (elQuery.dragging)
+	if (elQuery.dragging || event.target.classList.contains('ace_content'))
 		return;
 	event.preventDefault();
 	document.body.classList.remove('dragover');
@@ -2528,7 +2528,7 @@ function readFileAsText(file, encoding) {
 }
 
 document.addEventListener('drop', function (event) {
-	if (elQuery.dragging)
+	if (elQuery.dragging || event.target.classList.contains('ace_content'))
 		return;
 	event.preventDefault();
 	document.body.classList.remove('dragover');
