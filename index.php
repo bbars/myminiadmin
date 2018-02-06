@@ -1008,6 +1008,11 @@ function executeQuery(sql, safeRows) {
 					if (table) {
 						tabContents.appendChild(table);
 						elResultset.__resultsTables.push(table);
+						var chartBtn = document.createElement('button');
+						chartBtn.innerHTML = '&#x25A8;';
+						chartBtn.className = 'btn-chart m-l';
+						tabContents.appendChild(chartBtn);
+						chartBtn.__table = table;
 					}
 					else if (!result.info) {
 						var empty = document.createElement('div');
@@ -1043,6 +1048,7 @@ function createTableFromResult(result) {
 	var selectedBase = getSelectedBase();
 	var table = document.createElement('table');
 	table.classList.add('result');
+	table.__result = result;
 	var thead = document.createElement('thead');
 	var tbody = document.createElement('tbody');
 	var tr = document.createElement('tr');
@@ -1675,6 +1681,10 @@ button {
 	padding: 1em;
 	min-width: 100%;
 	box-sizing: border-box;
+	white-space: nowrap;
+}
+.tab > .tab-contents > * {
+	white-space: initial;
 }
 
 .m-t { margin-top:    0.5em; }
@@ -1725,6 +1735,7 @@ button {
 }
 
 table.result {
+	display: inline-table;
 	border-spacing: 0;
 	border-collapse: collapse;
 	border: #ddd 2px solid;
@@ -2222,6 +2233,164 @@ body.modal-stack-show .modal-stack {
 			});
 		};
 	})(this, elModalSqlValues, elSqlValuesForm, elSqlValuesSet);
+	
+	</script>
+</div>
+<div id="elModalChart" class="modal modal-full">
+	<span class="modal-close"></span>
+	<h2>Chart</h2>
+	<div class="m-t"><select id="elChartXCol"></select></div>
+	<div class="m-t" id="elChartYCols"></div>
+	<div class="m-t" id="elChartContainer"></div>
+	<div class="m-t" id="elChartInfo"></div>
+	<style>
+	#elChartContainer > .tinychart {
+		width: 100%;
+		height: 10em;
+	}
+	</style>
+	<script src="?part=tinychart.js"></script>
+	<script>
+	
+	(function (context, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfo) {
+		var stringTypes = ['ENUM','SET','VAR_STRING','STRING'];
+		var numberTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
+		var dateTypes = ['TIMESTAMP','DATE','TIME','DATETIME','NEWDATE'];
+		var stringTypes = ['TIMESTAMP','DATE','TIME','DATETIME','NEWDATE'];
+		var availXTypes = [].concat(stringTypes).concat(numberTypes).concat(dateTypes);
+		var availYTypes = [].concat(numberTypes);
+		
+		context.showChart = function (result) {
+			while (elChartXCol.children.length)
+				elChartXCol.removeChild(elChartXCol.children[0]);
+			while (elChartYCols.children.length)
+				elChartYCols.removeChild(elChartYCols.children[0]);
+			for (var i = 0; i < result.fields.length; i++) {
+				var type = result.fields[i].type;
+				
+				if (availXTypes.indexOf(type) > -1) {
+					var elOption = document.createElement('option');
+					elOption.value = i;
+					elOption.textContent = elOption.innerText = result.fields[i].name;
+					elChartXCol.appendChild(elOption);
+				}
+				if (availYTypes.indexOf(type) > -1) {
+					var elLabel = document.createElement('label');
+					elChartYCols.appendChild(elLabel);
+					elLabel.textContent = elLabel.innerText = result.fields[i].name;
+					elLabel.className = 'm-r';
+					var elCheckbox = document.createElement('input');
+					elLabel.insertBefore(elCheckbox, elLabel.firstChild);
+					elCheckbox.type = 'checkbox';
+					elCheckbox.value = i;
+					elCheckbox.checked = elChartYCols.children.length == 2;
+				}
+			}
+			
+			var chart;
+			
+			function redraw() {
+				if (!chart)
+					chart = new Tinychart(elChartContainer);
+				
+				var xCol = +elChartXCol.value;
+				var xType = result.fields[xCol].type;
+				var xTypeIsDate = dateTypes.indexOf(xType) > -1;
+				for (var i = 0; i < elChartYCols.children.length; i++) {
+					elChartYCols.children[i].style.color = '';
+				}
+				var checkedY = Array.prototype.slice.call(elChartYCols.querySelectorAll('input:checked'), 0);
+				var yCols = checkedY.map(function (v, i) {
+					return +v.value;
+				});
+				var data = [];
+				
+				for (var i = 0; i < result.rows.length; i++) {
+					var item = [];
+					var x = result.rows[i][xCol];
+					if (xTypeIsDate) {
+						x = new Date(x.split(' ', 2).join('T'));
+					}
+					item[0] = x;
+					
+					for (var j = 0; j < yCols.length; j++)
+						item[j + 1] = result.rows[i][yCols[j]];
+					
+					data.push(item);
+				}
+				
+				console.log(xCol, yCols, data);
+				chart.setData(data);
+				for (var i = 0; i < checkedY.length; i++) {
+					checkedY[i].parentElement.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
+				}
+			}
+			
+			var prevDots = null;
+			function onChartContainerEvent(event) {
+				if (event.type == 'hovervalue') {
+					var val = event.detail;
+					var dots = val.dots;
+					if (prevDots) {
+						for (var i = 0; i < prevDots.length; i++)
+							prevDots[i].classList.remove('hover');
+						prevDots = null;
+					}
+					if (val.dots) {
+						for (var i = 0; i < val.dots.length; i++)
+							val.dots[i].classList.add('hover');
+						prevDots = val.dots;
+					}
+					var s = [
+						'<b>' + val.x + '</b>',
+					];
+					for (var i = 0; i < val.y.length; i++) {
+						if (typeof val.y[i] == 'undefined') {
+							s.push('');
+						}
+						else {
+							s.push('<span style="color: hsl(' + chart.hues[i] + ', 50%, 50%)">' + val.y[i] + '</span>');
+						}
+					}
+					elChartInfo.innerHTML = s.join('<br/>');
+				}
+				else if (event.type == 'mouseleave') {
+					if (prevDots) {
+						for (var i = 0; i < prevDots.length; i++)
+							prevDots[i].classList.remove('hover');
+						prevDots = null;
+					}
+				}
+			}
+			function onModalEvent(event) {
+				if (event.type == 'change') {
+					redraw();
+				}
+				else if (event.type == 'modal-hide') {
+					elModalChart.removeEventListener('change', onModalEvent);
+					elModalChart.removeEventListener('modal-hide', onModalEvent);
+					elChartContainer.removeEventListener('hovervalue', onChartContainerEvent);
+					elChartContainer.removeEventListener('mouseleave', onChartContainerEvent);
+					chart.remove();
+				}
+			}
+			
+			elModalChart.addEventListener('change', onModalEvent);
+			elModalChart.addEventListener('modal-hide', onModalEvent);
+			elChartContainer.addEventListener('hovervalue', onChartContainerEvent);
+			elChartContainer.addEventListener('mouseleave', onChartContainerEvent);
+			
+			Modal.show(elModalChart);
+		};
+		
+		elResultset.addEventListener('click', function (event) {
+			if (!event.target.classList.contains('btn-chart'))
+				return;
+			var result = event.target.__table.__result;
+			context.showChart(result);
+		});
+		
+	})(this, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfo);
 	
 	</script>
 </div>
@@ -2787,6 +2956,411 @@ Content-Type: application/javascript; charset="utf-8"
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 !function(e){function t(e){this.options=a.extend({},t.defaultOptions,e),this.clear()}function i(e){this.options=a.extend({},i.defaultChartOptions,e),this.seriesSet=[],this.currentValueRange=1,this.currentVisMinValue=0,this.lastRenderTimeMillis=0}var a={extend:function(){arguments[0]=arguments[0]||{};for(var e=1;e<arguments.length;e++)for(var t in arguments[e])arguments[e].hasOwnProperty(t)&&("object"==typeof arguments[e][t]?arguments[e][t]instanceof Array?arguments[0][t]=arguments[e][t]:arguments[0][t]=a.extend(arguments[0][t],arguments[e][t]):arguments[0][t]=arguments[e][t]);return arguments[0]}};t.defaultOptions={resetBoundsInterval:3e3,resetBounds:!0},t.prototype.clear=function(){this.data=[],this.maxValue=Number.NaN,this.minValue=Number.NaN},t.prototype.resetBounds=function(){if(this.data.length){this.maxValue=this.data[0][1],this.minValue=this.data[0][1];for(var e=1;e<this.data.length;e++){var t=this.data[e][1];t>this.maxValue&&(this.maxValue=t),t<this.minValue&&(this.minValue=t)}}else this.maxValue=Number.NaN,this.minValue=Number.NaN},t.prototype.append=function(e,t,i){for(var a=this.data.length-1;a>=0&&this.data[a][0]>e;)a--;-1===a?this.data.splice(0,0,[e,t]):this.data.length>0&&this.data[a][0]===e?i?(this.data[a][1]+=t,t=this.data[a][1]):this.data[a][1]=t:a<this.data.length-1?this.data.splice(a+1,0,[e,t]):this.data.push([e,t]),this.maxValue=isNaN(this.maxValue)?t:Math.max(this.maxValue,t),this.minValue=isNaN(this.minValue)?t:Math.min(this.minValue,t)},t.prototype.dropOldData=function(e,t){for(var i=0;this.data.length-i>=t&&this.data[i+1][0]<e;)i++;0!==i&&this.data.splice(0,i)},i.defaultChartOptions={millisPerPixel:20,enableDpiScaling:!0,yMinFormatter:function(e,t){return parseFloat(e).toFixed(t)},yMaxFormatter:function(e,t){return parseFloat(e).toFixed(t)},maxValueScale:1,minValueScale:1,interpolation:"bezier",scaleSmoothing:.125,maxDataSetLength:2,scrollBackwards:!1,grid:{fillStyle:"#000000",strokeStyle:"#777777",lineWidth:1,sharpLines:!1,millisPerLine:1e3,verticalSections:2,borderVisible:!0},labels:{fillStyle:"#ffffff",disabled:!1,fontSize:10,fontFamily:"monospace",precision:2},horizontalLines:[]},i.AnimateCompatibility={requestAnimationFrame:function(e,t){return(window.requestAnimationFrame||window.webkitRequestAnimationFrame||window.mozRequestAnimationFrame||window.oRequestAnimationFrame||window.msRequestAnimationFrame||function(e){return window.setTimeout(function(){e((new Date).getTime())},16)}).call(window,e,t)},cancelAnimationFrame:function(e){return(window.cancelAnimationFrame||function(e){clearTimeout(e)}).call(window,e)}},i.defaultSeriesPresentationOptions={lineWidth:1,strokeStyle:"#ffffff"},i.prototype.addTimeSeries=function(e,t){this.seriesSet.push({timeSeries:e,options:a.extend({},i.defaultSeriesPresentationOptions,t)}),e.options.resetBounds&&e.options.resetBoundsInterval>0&&(e.resetBoundsTimerId=setInterval(function(){e.resetBounds()},e.options.resetBoundsInterval))},i.prototype.removeTimeSeries=function(e){for(var t=this.seriesSet.length,i=0;i<t;i++)if(this.seriesSet[i].timeSeries===e){this.seriesSet.splice(i,1);break}e.resetBoundsTimerId&&clearInterval(e.resetBoundsTimerId)},i.prototype.getTimeSeriesOptions=function(e){for(var t=this.seriesSet.length,i=0;i<t;i++)if(this.seriesSet[i].timeSeries===e)return this.seriesSet[i].options},i.prototype.bringToFront=function(e){for(var t=this.seriesSet.length,i=0;i<t;i++)if(this.seriesSet[i].timeSeries===e){var a=this.seriesSet.splice(i,1);this.seriesSet.push(a[0]);break}},i.prototype.streamTo=function(e,t){this.canvas=e,this.delay=t,this.start()},i.prototype.resize=function(){if(this.options.enableDpiScaling&&window&&1!==window.devicePixelRatio){var e=window.devicePixelRatio,t=parseInt(this.canvas.getAttribute("width")),i=parseInt(this.canvas.getAttribute("height"));this.originalWidth&&Math.floor(this.originalWidth*e)===t||(this.originalWidth=t,this.canvas.setAttribute("width",Math.floor(t*e).toString()),this.canvas.style.width=t+"px",this.canvas.getContext("2d").scale(e,e)),this.originalHeight&&Math.floor(this.originalHeight*e)===i||(this.originalHeight=i,this.canvas.setAttribute("height",Math.floor(i*e).toString()),this.canvas.style.height=i+"px",this.canvas.getContext("2d").scale(e,e))}},i.prototype.start=function(){if(!this.frame){var e=function(){this.frame=i.AnimateCompatibility.requestAnimationFrame(function(){this.render(),e()}.bind(this))}.bind(this);e()}},i.prototype.stop=function(){this.frame&&(i.AnimateCompatibility.cancelAnimationFrame(this.frame),delete this.frame)},i.prototype.updateValueRange=function(){for(var e=this.options,t=Number.NaN,i=Number.NaN,a=0;a<this.seriesSet.length;a++){var s=this.seriesSet[a].timeSeries;isNaN(s.maxValue)||(t=isNaN(t)?s.maxValue:Math.max(t,s.maxValue)),isNaN(s.minValue)||(i=isNaN(i)?s.minValue:Math.min(i,s.minValue))}if(null!=e.maxValue?t=e.maxValue:t*=e.maxValueScale,null!=e.minValue?i=e.minValue:i-=Math.abs(i*e.minValueScale-i),this.options.yRangeFunction){var n=this.options.yRangeFunction({min:i,max:t});i=n.min,t=n.max}if(!isNaN(t)&&!isNaN(i)){var r=t-i-this.currentValueRange,l=i-this.currentVisMinValue;this.isAnimatingScale=Math.abs(r)>.1||Math.abs(l)>.1,this.currentValueRange+=e.scaleSmoothing*r,this.currentVisMinValue+=e.scaleSmoothing*l}this.valueRange={min:i,max:t}},i.prototype.render=function(e,t){var i=(new Date).getTime();if(!this.isAnimatingScale){var a=Math.min(1e3/6,this.options.millisPerPixel);if(i-this.lastRenderTimeMillis<a)return}this.resize(),this.lastRenderTimeMillis=i,e=e||this.canvas,t=t||i-(this.delay||0),t-=t%this.options.millisPerPixel;var s=e.getContext("2d"),n=this.options,r={top:0,left:0,width:e.clientWidth,height:e.clientHeight},l=t-r.width*n.millisPerPixel,o=function(e){var t=e-this.currentVisMinValue;return 0===this.currentValueRange?r.height:r.height-Math.round(t/this.currentValueRange*r.height)}.bind(this),h=function(e){return n.scrollBackwards?Math.round((t-e)/n.millisPerPixel):Math.round(r.width-(t-e)/n.millisPerPixel)};if(this.updateValueRange(),s.font=n.labels.fontSize+"px "+n.labels.fontFamily,s.save(),s.translate(r.left,r.top),s.beginPath(),s.rect(0,0,r.width,r.height),s.clip(),s.save(),s.fillStyle=n.grid.fillStyle,s.clearRect(0,0,r.width,r.height),s.fillRect(0,0,r.width,r.height),s.restore(),s.save(),s.lineWidth=n.grid.lineWidth,s.strokeStyle=n.grid.strokeStyle,n.grid.millisPerLine>0){s.beginPath();for(R=t-t%n.grid.millisPerLine;R>=l;R-=n.grid.millisPerLine){A=h(R);n.grid.sharpLines&&(A-=.5),s.moveTo(A,0),s.lineTo(A,r.height)}s.stroke(),s.closePath()}for(var d=1;d<n.grid.verticalSections;d++){var u=Math.round(d*r.height/n.grid.verticalSections);n.grid.sharpLines&&(u-=.5),s.beginPath(),s.moveTo(0,u),s.lineTo(r.width,u),s.stroke(),s.closePath()}if(n.grid.borderVisible&&(s.beginPath(),s.strokeRect(0,0,r.width,r.height),s.closePath()),s.restore(),n.horizontalLines&&n.horizontalLines.length)for(var m=0;m<n.horizontalLines.length;m++){var c=n.horizontalLines[m],f=Math.round(o(c.value))-.5;s.strokeStyle=c.color||"#ffffff",s.lineWidth=c.lineWidth||1,s.beginPath(),s.moveTo(0,f),s.lineTo(r.width,f),s.stroke(),s.closePath()}for(var g=0;g<this.seriesSet.length;g++){s.save();var p=this.seriesSet[g].timeSeries,S=p.data,v=this.seriesSet[g].options;p.dropOldData(l,n.maxDataSetLength),s.lineWidth=v.lineWidth,s.strokeStyle=v.strokeStyle,s.beginPath();for(var w=0,x=0,y=0,b=0;b<S.length&&1!==S.length;b++){var V=h(S[b][0]),T=o(S[b][1]);if(0===b)w=V,s.moveTo(V,T);else switch(n.interpolation){case"linear":case"line":s.lineTo(V,T);break;case"bezier":default:s.bezierCurveTo(Math.round((x+V)/2),y,Math.round(x+V)/2,T,V,T);break;case"step":s.lineTo(V,y),s.lineTo(V,T)}x=V,y=T}S.length>1&&(v.fillStyle&&(s.lineTo(r.width+v.lineWidth+1,y),s.lineTo(r.width+v.lineWidth+1,r.height+v.lineWidth+1),s.lineTo(w,r.height+v.lineWidth),s.fillStyle=v.fillStyle,s.fill()),v.strokeStyle&&"none"!==v.strokeStyle&&s.stroke(),s.closePath()),s.restore()}if(!n.labels.disabled&&!isNaN(this.valueRange.min)&&!isNaN(this.valueRange.max)){var N=n.yMaxFormatter(this.valueRange.max,n.labels.precision),P=n.yMinFormatter(this.valueRange.min,n.labels.precision),M=n.scrollBackwards?0:r.width-s.measureText(N).width-2,k=n.scrollBackwards?0:r.width-s.measureText(P).width-2;s.fillStyle=n.labels.fillStyle,s.fillText(N,M,n.labels.fontSize),s.fillText(P,k,r.height-2)}if(n.timestampFormatter&&n.grid.millisPerLine>0)for(var F=n.scrollBackwards?s.measureText(P).width:r.width-s.measureText(P).width+4,R=t-t%n.grid.millisPerLine;R>=l;R-=n.grid.millisPerLine){var A=h(R);if(!n.scrollBackwards&&A<F||n.scrollBackwards&&A>F){var B=new Date(R),L=n.timestampFormatter(B),W=s.measureText(L).width;F=n.scrollBackwards?A+W+2:A-W-2,s.fillStyle=n.labels.fillStyle,n.scrollBackwards?s.fillText(L,A,r.height-2):s.fillText(L,A-W,r.height-2)}}s.restore()},i.timeFormatter=function(e){function t(e){return(e<10?"0":"")+e}return t(e.getHours())+":"+t(e.getMinutes())+":"+t(e.getSeconds())},e.TimeSeries=t,e.SmoothieChart=i}("undefined"==typeof exports?this:exports);
+// </script>
+
+-- ################################################################################################
+
+Name: tinychart.js
+Content-Type: application/javascript; charset="utf-8"
+
+// <script>
+function Tinychart(container) {
+	var NS = {
+		svg: 'http://www.w3.org/2000/svg',
+		xlink: 'http://www.w3.org/1999/xlink',
+	};
+	/**
+	 * CustomEvent polyfill
+	 * @see https://developer.mozilla.org/ru/docs/Web/API/CustomEvent/CustomEvent
+	 */
+	var CustomEvent = window.CustomEvent;
+	if (typeof CustomEvent !== 'function') {
+		CustomEvent = function (event, params) {
+			params = params || { bubbles: false, cancelable: false, detail: undefined };
+			var evt = document.createEvent('CustomEvent');
+			evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+			return evt;
+		}
+		CustomEvent.prototype = window.Event.prototype;
+	}
+	var _this = this;
+	this.svg = document.createElementNS(NS.svg, 'svg');
+	this.svg.classList.add('tinychart');
+	container.appendChild(this.svg);
+	this.svg.setAttributeNS(null, 'preserveAspectRatio', 'none');
+	
+	var styles = {
+		'svg': {
+			'cursor': 'crosshair',
+		},
+		'svg.move': {
+			'cursor': '-webkit-grabbing !important',
+		},
+		'.chart[data-type=line]': {
+			'transition': 'all 0.1s ease',
+		},
+		'.chart-x-axis': {
+			'stroke': '#ccc',
+			'stroke-width': 1,
+		},
+		'.chart[data-type=line] > g > path': {
+			'stroke-linecap': 'round',
+			'stroke-linejoin': 'round',
+			'stroke-width': 2,
+			'vector-effect': 'non-scaling-stroke',
+			'fill': 'transparent',
+		},
+		'.chart[data-type=line] > g > g.chart-dots > *': {
+			'stroke-width': 4,
+			'stroke-linecap': 'round',
+			'transition': 'all 0.1s ease',
+		},
+		'.chart[data-type=line]>g>g.chart-dots>*:hover': {
+			'stroke-width': 7,
+			'transition': 'none',
+		},
+		'.chart[data-type=line]>g>g.chart-dots>.hover': {
+			'stroke': 'inherit',
+			'stroke-width': 7,
+			'transition': 'none',
+		},
+	};
+	this.svg.styleChart = document.createElementNS(NS.svg, 'style');
+	var css = [];
+	for (var selector in styles) {
+		var s = '';
+		for (var prop in styles[selector])
+			s += prop + ':' + styles[selector][prop] + ';';
+		css.push(selector + '{' + s + '}');
+	}
+	this.svg.styleChart.textContent = css.join('\n');
+	this.svg.appendChild(this.svg.styleChart);
+	
+	this.data = [];
+	this.hues = [];
+	
+	this.setData = function (data, forceType) {
+		this.data = data;
+		_forceType = forceType;
+		this.draw();
+		return this;
+	};
+	
+	function perc(val, min, max) {
+		return max - min ? (val - min) / (max - min) * 100 : 0;
+	}
+	
+	var _scaleX = 1;
+	var _originX = 0.5;
+	var _xType = 0; // map: { 0: 'number', 1: 'date', 2: 'string' }
+	var _type = 'line;'
+	var _xMin = Infinity;
+	var _xMax = -Infinity;
+	var _yMin = Infinity;
+	var _yMax = -Infinity;
+	var _xCount = 0;
+	var _yCount = 0;
+	var _forceType = '';
+	
+	this.scaleX = function (scaleX, originX) {
+		if (!isNaN(scaleX)) {
+			_scaleX = scaleX;
+			this.svg.gChart.style.transform = 'scale(' + _scaleX + ', -1)';
+			
+			if (!isNaN(originX)) {
+				_originX = Math.max(0, Math.min(originX, 1));
+				this.svg.gChart.style.transformOrigin = (_originX * 100) + '% 50% 0px';
+			}
+		}
+		return _scaleX;
+	};
+	
+	this.draw = function () {
+		var gChart = this.svg.gChart;
+		if (!gChart) {
+			gChart = this.svg.gChart = document.createElementNS(NS.svg, 'g');
+			gChart.classList.add('chart');
+		}
+		while (gChart.children.length > 0) {
+			gChart.removeChild(gChart.children[0]);
+		}
+		_xType = 0; // map: { 0: 'number', 1: 'date', 2: 'string' }
+		_type = 'line'; // line/bar
+		_xMin = Infinity;
+		_xMax = -Infinity;
+		_yMin = Infinity;
+		_yMax = -Infinity;
+		_yCount = 0;
+		_xCount = this.data.length;
+		
+		for (var i = 0; i < this.data.length; i++) {
+			var val = this.data[i];
+			var x = val[0];
+			if (typeof x == 'number' || (+x).toString() === x)
+				_xType = Math.max(_xType, 0);
+			else if (x instanceof Date)
+				_xType = Math.max(_xType, 1);
+			else {
+				_xType = 2;
+			}
+			if (_xType == 0 || _xType == 1) {
+				_xMin = Math.min(_xMin, x.valueOf());
+				_xMax = Math.max(_xMax, x.valueOf());
+			}
+			_yCount = Math.max(_yCount, val.length - 1);
+			for (var j = 1; j < val.length; j++) {
+				if (isNaN(val[j]) || val[j] === null)
+					continue;
+				val[j] = +val[j];
+				_yMin = Math.min(_yMin, val[j].valueOf());
+				_yMax = Math.max(_yMax, val[j].valueOf());
+			}
+		}
+		
+		this.hues = new Array(_yCount).fill(0).map(function (hue, i) {
+			return 360 / _yCount * i;
+		});
+		
+		_type = _forceType || (_xType == 2 ? 'bar' : 'line');
+		gChart.setAttributeNS(null, 'data-type', _type);
+		gChart.setAttributeNS(null, 'data-x-type', _xType);
+		
+		var pXAxis = document.createElementNS(NS.svg, 'path');
+		pXAxis.classList.add('chart-x-axis');
+		pXAxis.setAttributeNS(null, 'd', 'M 0 0 l 100 0');
+		pXAxis.setAttributeNS(null, 'vector-effect', 'non-scaling-stroke');
+		gChart.appendChild(pXAxis);
+		
+		var xOffset = 0;
+		if (_type == 'bar') {
+			var gItems = new Array(_yCount).fill(null).map(function (v, i) {
+				var gItem = document.createElementNS(NS.svg, 'g');
+				gChart.appendChild(gItem);
+				return gItem;
+			});
+			var barWidth = Math.max(10, 100 / _xCount);
+			
+			for (var i = 0; i < this.data.length; i++) {
+				var val = this.data[i];
+				val.xValue = val[0];
+				val[0] = xOffset + barWidth / 2;
+				var yOffset = 0;
+				for (var j = 1; j < val.length; j++) {
+					if (isNaN(val[j]) || val[j] === null)
+						continue;
+					var rect = document.createElementNS(NS.svg, 'rect');
+					rect.setAttributeNS(null, 'x', xOffset);
+					rect.setAttributeNS(null, 'width', barWidth);
+					rect.setAttributeNS(null, 'y', yOffset);
+					rect.setAttributeNS(null, 'height', val[j]);
+					yOffset += val[j];
+					gItems[j-1].appendChild(rect);
+					_yMin = Math.min(_yMin, yOffset);
+				}
+				xOffset += barWidth;
+			}
+			
+			for (var i = 0; i < gItems.length; i++) {
+				gItems[i].setAttributeNS(null, 'fill', 'hsl(' + this.hues[i] + ', 50%, 50%)');
+			}
+		}
+		else {
+			var gItems = new Array(_yCount).fill(null).map(function (v, i) {
+				var gItem = document.createElementNS(NS.svg, 'g');
+				gChart.appendChild(gItem);
+				gItem.path = document.createElementNS(NS.svg, 'path');
+				gItem.appendChild(gItem.path)
+				gItem.path.d = '';
+				gItem.dots = document.createElementNS(NS.svg, 'g');
+				gItem.dots.classList.add('chart-dots');
+				gItem.appendChild(gItem.dots)
+				return gItem;
+			});
+			
+			var dotTpl = document.createElementNS(NS.svg, 'circle');
+			dotTpl.setAttributeNS(null, 'r', '1');
+			var dotTpl = document.createElementNS(NS.svg, 'path');
+			dotTpl.setAttributeNS(null, 'vector-effect', 'non-scaling-stroke');
+			
+			for (var i = 0; i < this.data.length; i++) {
+				var val = this.data[i];
+				val.xValue = val[0];
+				val.dots = [];
+				var prevVal = this.data[i-1] || [];
+				var yOffset = 0;
+				var x = val[0].valueOf();
+				val[0] = x;
+				var px = perc(x, _xMin, _xMax);
+				for (var j = 1; j <= _yCount; j++) {
+					var y = val[j];
+					if (isNaN(val[j]) || val[j] === null)
+						continue;
+					
+					var py = perc(y, _yMin, _yMax);
+					if (i == 0 || isNaN(prevVal[j]) || prevVal[j] === null) {
+						gItems[j-1].path.d += ' M ' + px + ' ' + py;
+					}
+					else {
+						gItems[j-1].path.d += ' L ' + px + ' ' + py;
+					}
+					
+					var dot = dotTpl.cloneNode();
+					dot.setAttributeNS(null, 'd', 'M ' + px + ' ' + py + ' l 0 0');
+					dot.setAttributeNS(null, 'data-x', x);
+					gItems[j-1].dots.appendChild(dot);
+					val.dots.push(dot);
+				}
+			}
+			
+			for (var i = 0; i < gItems.length; i++) {
+				gItems[i].path.setAttributeNS(null, 'stroke', 'hsl(' + this.hues[i] + ', 50%, 50%)');
+				gItems[i].path.setAttributeNS(null, 'd', gItems[i].path.d);
+				gItems[i].dots.setAttributeNS(null, 'stroke', 'hsl(' + this.hues[i] + ', 70%, 30%)');
+			}
+		}
+		
+		this.svg.appendChild(gChart);
+		var bbox = gChart.getBBox();
+		bbox = gChart.getBBox();
+		this.svg.setAttributeNS(null, 'viewBox', [bbox.x-2, bbox.y-2, bbox.width+4, bbox.height+4].join(' '));
+		this.scaleX(1, 0.5);
+		setTimeout(function () {
+			_this.scaleX(1, 0.5);
+			_this.svg.setAttributeNS(null, 'viewBox', [bbox.x-2, bbox.y-2, bbox.width+4, bbox.height+4].join(' '));
+		}, 100);
+		
+		return this;
+	};
+	
+	this.getRealX = function (x) {
+		return x / _scaleX + _originX / _scaleX * (_scaleX-1);
+	};
+	
+	this.hoverValue = function (rx) {
+		var xIndex = -1;
+		if (_type == 'bar') {
+			xIndex = Math.max(0, Math.min(Math.round((_xCount - 1) * rx), _xCount-1));
+		}
+		else {
+			xIndex = this.findClosestX((_xMax - _xMin) * rx + _xMin);
+		}
+		
+		var val = this.data[xIndex];
+		if (!val)
+			return false;
+		this.svg.dispatchEvent(new CustomEvent('hovervalue', {
+			detail: {
+				x: val.xValue,
+				y: val.slice(1),
+				dots: val.dots,
+			},
+			bubbles: true,
+			cancelable: false,
+		}));
+		return true;
+	};
+	
+	function cmp(a, b) {
+		return a == b ? 0 : (a > b ? 1 : -1);
+	}
+	
+	this.findClosestX = function (value) {
+		if (!this.data.length)
+			return -1;
+		var l = 0;
+		var r = this.data.length;
+		var i;
+		var c;
+		
+		do {
+			i = l + (r - l) / 2 | 0;
+			c = cmp(this.data[i][0], value);
+			
+			if (c > 0) {
+				if (r == i)
+					break;
+				r = i;
+			}
+			else if (c < 0) {
+				if (l == i)
+					break;
+				l = i;
+			}
+			else //if (c == 0)
+				break;
+		} while (r - l > 0);
+		
+		if (i > 0 && Math.abs(value - this.data[i-1][0]) < Math.abs(this.data[i][0] - value)) {
+			i--;
+		}
+		else if (i < this.data.length-1 && Math.abs(this.data[i+1][0] - value) < Math.abs(this.data[i][0] - value)) {
+			i++;
+		}
+		
+		return i;
+	};
+	
+	var capture = null;
+	function svgMousedownListener(event) {
+		capture = {
+			cx: event.pageX,
+			originX: _originX,
+		};
+		_this.svg.classList.add('move');
+		return false;
+	}
+	function documentMouseupListener(event) {
+		capture = null;
+		_this.svg.classList.remove('move');
+	}
+	function documentMousemoveListener(event) {
+		if (!capture)
+			return;
+		var x = event.offsetX / _this.svg.clientWidth;
+		if (x < 0.03)
+			x = 0;
+		else if (x > 0.97)
+			x = 1;
+		var dx = (capture.cx - event.pageX) / (_this.svg.clientWidth * _scaleX - _this.svg.clientWidth);
+		_this.scaleX(_scaleX, Math.max(0, Math.min((capture.originX + dx), 1)));
+	}
+	function svgMousemoveLister(event) {
+		_this.hoverValue(_this.getRealX(event.offsetX / _this.svg.clientWidth));
+	}
+	function svgMousewheelListener(event) {
+		var x = event.offsetX / _this.svg.clientWidth;
+		var rx = _this.getRealX(x);
+		_this.hoverValue(rx);
+		if (x < 0.03)
+			rx = _this.getRealX(x = 0);
+		else if (x > 0.97)
+			rx = _this.getRealX(x = 1);
+		
+		if (event.deltaY < 0) {
+			_this.scaleX(_scaleX * 1.2, rx);
+		}
+		else if (event.deltaY > 0) {
+			_this.scaleX(Math.max(1, _scaleX / 1.2), rx);
+		}
+	}
+	
+	this.svg.addEventListener('mousedown', svgMousedownListener, {passive: true, capture: true});
+	document.addEventListener('mouseup', documentMouseupListener, {passive: true, capture: true});
+	document.addEventListener('mousemove', documentMousemoveListener, {passive: true, capture: true});
+	this.svg.addEventListener('mousemove', svgMousemoveLister, {passive: true, capture: true});
+	this.svg.addEventListener('mousewheel', svgMousewheelListener, {passive: true, capture: true});
+	
+	this.remove = function () {
+		if (this.svg.parentElement)
+			this.svg.parentElement.removeChild(this.svg);
+		
+		this.svg.removeEventListener('mousedown', svgMousedownListener, true);
+		document.removeEventListener('mouseup', documentMouseupListener, true);
+		document.removeEventListener('mousemove', documentMousemoveListener, true);
+		this.svg.removeEventListener('mousemove', svgMousemoveLister, true);
+		this.svg.removeEventListener('mousewheel', svgMousewheelListener, true);
+	};
+}
 // </script>
 
 -- ################################################################################################
