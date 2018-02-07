@@ -2553,7 +2553,7 @@ elLogoutButton.addEventListener('click', function () {
 editor.setValue(config.query);
 editor.focus();
 
-elResultset.addEventListener('scroll', updateTableHeaderScroll);
+elResultset.addEventListener('scroll', updateTableHeaderScroll, { passive: true });
 
 function updateTableHeaderScroll() {
 	// find first visible table:
@@ -2730,7 +2730,7 @@ document.addEventListener('drop', function (event) {
 			showing: elAside.classList.contains('showing'),
 		};
 		elAside.style.transition = '';
-	});
+	}, { passive: true });
 	elAside.addEventListener('touchmove', function (event) {
 		var touch = event.touches[0];
 		var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
@@ -2739,7 +2739,7 @@ document.addEventListener('drop', function (event) {
 			var minLeft = -(elAside.clientWidth / window.innerWidth) * 100;
 			elAside.style.left = Math.min(0, Math.max(left, minLeft)) + '%';
 		}
-	});
+	}, { passive: true });
 	elAside.addEventListener('touchend', function (event) {
 		var touch = event.changedTouches[0];
 		var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
