@@ -2239,14 +2239,18 @@ body.modal-stack-show .modal-stack {
 <div id="elModalChart" class="modal modal-full">
 	<span class="modal-close"></span>
 	<h2>Chart</h2>
-	<div class="m-t"><select id="elChartXCol"></select></div>
-	<div class="m-t" id="elChartYCols"></div>
+	<div class="m-t">X-axis: <select id="elChartXCol"></select></div>
+	<div class="m-t">Y-axis: <span id="elChartYCols"></span></div>
 	<div class="m-t" id="elChartContainer"></div>
 	<div class="m-t" id="elChartInfo"></div>
 	<style>
+	#elModalChart > h2 {
+		margin-top: 0;
+	}
 	#elChartContainer > .tinychart {
 		width: 100%;
-		height: 10em;
+		height: 16em;
+		max-height: 50vh;
 	}
 	</style>
 	<script src="?part=tinychart.js"></script>
@@ -2256,7 +2260,6 @@ body.modal-stack-show .modal-stack {
 		var stringTypes = ['ENUM','SET','VAR_STRING','STRING'];
 		var numberTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
 		var dateTypes = ['TIMESTAMP','DATE','TIME','DATETIME','NEWDATE'];
-		var stringTypes = ['TIMESTAMP','DATE','TIME','DATETIME','NEWDATE'];
 		var availXTypes = [].concat(stringTypes).concat(numberTypes).concat(dateTypes);
 		var availYTypes = [].concat(numberTypes);
 		
@@ -2265,6 +2268,7 @@ body.modal-stack-show .modal-stack {
 				elChartXCol.removeChild(elChartXCol.children[0]);
 			while (elChartYCols.children.length)
 				elChartYCols.removeChild(elChartYCols.children[0]);
+			var yChecked = false;
 			for (var i = 0; i < result.fields.length; i++) {
 				var type = result.fields[i].type;
 				
@@ -2283,7 +2287,7 @@ body.modal-stack-show .modal-stack {
 					elLabel.insertBefore(elCheckbox, elLabel.firstChild);
 					elCheckbox.type = 'checkbox';
 					elCheckbox.value = i;
-					elCheckbox.checked = elChartYCols.children.length == 2;
+					elCheckbox.checked = yChecked = (!yChecked && i != elChartXCol.value);
 				}
 			}
 			
@@ -2299,8 +2303,8 @@ body.modal-stack-show .modal-stack {
 				for (var i = 0; i < elChartYCols.children.length; i++) {
 					elChartYCols.children[i].style.color = '';
 				}
-				var checkedY = Array.prototype.slice.call(elChartYCols.querySelectorAll('input:checked'), 0);
-				var yCols = checkedY.map(function (v, i) {
+				var yCheckedInputs = Array.prototype.slice.call(elChartYCols.querySelectorAll('input:checked'), 0);
+				var yCols = yCheckedInputs.map(function (v, i) {
 					return +v.value;
 				});
 				var data = [];
@@ -2321,26 +2325,14 @@ body.modal-stack-show .modal-stack {
 				
 				console.log(xCol, yCols, data);
 				chart.setData(data);
-				for (var i = 0; i < checkedY.length; i++) {
-					checkedY[i].parentElement.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
+				for (var i = 0; i < yCheckedInputs.length; i++) {
+					yCheckedInputs[i].parentElement.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
 				}
 			}
 			
-			var prevDots = null;
 			function onChartContainerEvent(event) {
 				if (event.type == 'hovervalue') {
 					var val = event.detail;
-					var dots = val.dots;
-					if (prevDots) {
-						for (var i = 0; i < prevDots.length; i++)
-							prevDots[i].classList.remove('hover');
-						prevDots = null;
-					}
-					if (val.dots) {
-						for (var i = 0; i < val.dots.length; i++)
-							val.dots[i].classList.add('hover');
-						prevDots = val.dots;
-					}
 					var s = [
 						'<b>' + val.x + '</b>',
 					];
@@ -2354,13 +2346,6 @@ body.modal-stack-show .modal-stack {
 					}
 					elChartInfo.innerHTML = s.join('<br/>');
 				}
-				else if (event.type == 'mouseleave') {
-					if (prevDots) {
-						for (var i = 0; i < prevDots.length; i++)
-							prevDots[i].classList.remove('hover');
-						prevDots = null;
-					}
-				}
 			}
 			function onModalEvent(event) {
 				if (event.type == 'change') {
@@ -2371,7 +2356,9 @@ body.modal-stack-show .modal-stack {
 					elModalChart.removeEventListener('modal-hide', onModalEvent);
 					elChartContainer.removeEventListener('hovervalue', onChartContainerEvent);
 					elChartContainer.removeEventListener('mouseleave', onChartContainerEvent);
-					chart.remove();
+					if (chart) {
+						chart.remove();
+					}
 				}
 			}
 			
@@ -2381,6 +2368,7 @@ body.modal-stack-show .modal-stack {
 			elChartContainer.addEventListener('mouseleave', onChartContainerEvent);
 			
 			Modal.show(elModalChart);
+			redraw();
 		};
 		
 		elResultset.addEventListener('click', function (event) {
@@ -3015,14 +3003,16 @@ function Tinychart(container) {
 			'stroke-linecap': 'round',
 			'transition': 'all 0.1s ease',
 		},
-		'.chart[data-type=line]>g>g.chart-dots>*:hover': {
-			'stroke-width': 7,
-			'transition': 'none',
-		},
-		'.chart[data-type=line]>g>g.chart-dots>.hover': {
+		'.chart[data-type=line] > g > g.chart-dots > .hover': {
 			'stroke': 'inherit',
 			'stroke-width': 7,
 			'transition': 'none',
+		},
+		'.chart[data-type=bar] > g > rect': {
+			'fill-opacity': 0.9,
+		},
+		'.chart[data-type=bar] > g > rect.hover': {
+			'fill-opacity': 1,
 		},
 	};
 	this.svg.styleChart = document.createElementNS(NS.svg, 'style');
@@ -3143,6 +3133,7 @@ function Tinychart(container) {
 			for (var i = 0; i < this.data.length; i++) {
 				var val = this.data[i];
 				val.xValue = val[0];
+				val.rects = [];
 				val[0] = xOffset + barWidth / 2;
 				var yOffset = 0;
 				for (var j = 1; j < val.length; j++) {
@@ -3156,6 +3147,7 @@ function Tinychart(container) {
 					yOffset += val[j];
 					gItems[j-1].appendChild(rect);
 					_yMin = Math.min(_yMin, yOffset);
+					val.rects.push(rect);
 				}
 				xOffset += barWidth;
 			}
@@ -3165,6 +3157,9 @@ function Tinychart(container) {
 			}
 		}
 		else {
+			this.data.sort(function (a, b) {
+				return a[0] - b[0];
+			});
 			var gItems = new Array(_yCount).fill(null).map(function (v, i) {
 				var gItem = document.createElementNS(NS.svg, 'g');
 				gChart.appendChild(gItem);
@@ -3222,11 +3217,11 @@ function Tinychart(container) {
 		this.svg.appendChild(gChart);
 		var bbox = gChart.getBBox();
 		bbox = gChart.getBBox();
-		this.svg.setAttributeNS(null, 'viewBox', [bbox.x-2, bbox.y-2, bbox.width+4, bbox.height+4].join(' '));
+		this.svg.setAttributeNS(null, 'viewBox', [bbox.x, bbox.y, bbox.width, bbox.height].join(' '));
 		this.scaleX(1, 0.5);
 		setTimeout(function () {
 			_this.scaleX(1, 0.5);
-			_this.svg.setAttributeNS(null, 'viewBox', [bbox.x-2, bbox.y-2, bbox.width+4, bbox.height+4].join(' '));
+			_this.svg.setAttributeNS(null, 'viewBox', [bbox.x, bbox.y, bbox.width, bbox.height].join(' '));
 		}, 100);
 		
 		return this;
@@ -3236,10 +3231,19 @@ function Tinychart(container) {
 		return x / _scaleX + _originX / _scaleX * (_scaleX-1);
 	};
 	
+	var _hovered = null;
+	
 	this.hoverValue = function (rx) {
+		if (_hovered && _hovered.length) {
+			for (var i = 0; i < _hovered.length; i++)
+				_hovered[i].classList.remove('hover');
+		}
+		_hovered = null;
+		if (rx < 0 || rx > 1)
+			return false;
 		var xIndex = -1;
 		if (_type == 'bar') {
-			xIndex = Math.max(0, Math.min(Math.round((_xCount - 1) * rx), _xCount-1));
+			xIndex = Math.max(0, Math.min(_xCount * rx | 0, _xCount-1));
 		}
 		else {
 			xIndex = this.findClosestX((_xMax - _xMin) * rx + _xMin);
@@ -3248,21 +3252,22 @@ function Tinychart(container) {
 		var val = this.data[xIndex];
 		if (!val)
 			return false;
+		_hovered = [].concat(val.rects ? val.rects : val.dots);
+		for (var i = 0; i < _hovered.length; i++)
+			_hovered[i].classList.add('hover');
 		this.svg.dispatchEvent(new CustomEvent('hovervalue', {
 			detail: {
 				x: val.xValue,
 				y: val.slice(1),
 				dots: val.dots,
+				rects: val.rects,
+				hovered: _hovered,
 			},
 			bubbles: true,
 			cancelable: false,
 		}));
 		return true;
 	};
-	
-	function cmp(a, b) {
-		return a == b ? 0 : (a > b ? 1 : -1);
-	}
 	
 	this.findClosestX = function (value) {
 		if (!this.data.length)
@@ -3274,7 +3279,7 @@ function Tinychart(container) {
 		
 		do {
 			i = l + (r - l) / 2 | 0;
-			c = cmp(this.data[i][0], value);
+			c = this.data[i][0] - value;
 			
 			if (c > 0) {
 				if (r == i)
@@ -3327,6 +3332,10 @@ function Tinychart(container) {
 	function svgMousemoveLister(event) {
 		_this.hoverValue(_this.getRealX(event.offsetX / _this.svg.clientWidth));
 	}
+	function svgMouseleaveLister(event) {
+		if (event.target == _this.svg)
+		_this.hoverValue(-1);
+	}
 	function svgMousewheelListener(event) {
 		var x = event.offsetX / _this.svg.clientWidth;
 		var rx = _this.getRealX(x);
@@ -3348,6 +3357,7 @@ function Tinychart(container) {
 	document.addEventListener('mouseup', documentMouseupListener, {passive: true, capture: true});
 	document.addEventListener('mousemove', documentMousemoveListener, {passive: true, capture: true});
 	this.svg.addEventListener('mousemove', svgMousemoveLister, {passive: true, capture: true});
+	this.svg.addEventListener('mouseleave', svgMouseleaveLister, {passive: true, capture: true});
 	this.svg.addEventListener('mousewheel', svgMousewheelListener, {passive: true, capture: true});
 	
 	this.remove = function () {
@@ -3358,6 +3368,7 @@ function Tinychart(container) {
 		document.removeEventListener('mouseup', documentMouseupListener, true);
 		document.removeEventListener('mousemove', documentMousemoveListener, true);
 		this.svg.removeEventListener('mousemove', svgMousemoveLister, true);
+		this.svg.removeEventListener('mouseleave', svgMouseleaveLister, true);
 		this.svg.removeEventListener('mousewheel', svgMousewheelListener, true);
 	};
 }
