@@ -2287,7 +2287,9 @@ body.modal-stack-show .modal-stack {
 					elLabel.insertBefore(elCheckbox, elLabel.firstChild);
 					elCheckbox.type = 'checkbox';
 					elCheckbox.value = i;
-					elCheckbox.checked = yChecked = (!yChecked && i != elChartXCol.value);
+					if (!yChecked && i != elChartXCol.value) {
+						elCheckbox.checked = yChecked = true;
+					}
 				}
 			}
 			
@@ -3217,11 +3219,10 @@ function Tinychart(container) {
 		this.svg.appendChild(gChart);
 		var bbox = gChart.getBBox();
 		bbox = gChart.getBBox();
-		this.svg.setAttributeNS(null, 'viewBox', [bbox.x, bbox.y, bbox.width, bbox.height].join(' '));
+		this.svg.setAttributeNS(null, 'viewBox', [bbox.x, bbox.y, bbox.width || 1, bbox.height || 1].join(' '));
 		this.scaleX(1, 0.5);
 		setTimeout(function () {
 			_this.scaleX(1, 0.5);
-			_this.svg.setAttributeNS(null, 'viewBox', [bbox.x, bbox.y, bbox.width, bbox.height].join(' '));
 		}, 100);
 		
 		return this;
