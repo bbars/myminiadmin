@@ -3033,10 +3033,10 @@ function Tinychart(container) {
 			'stroke-width': 7,
 			'transition': 'none',
 		},
-		'.chart[data-type=bar] > g > rect': {
+		'.chart[data-type=col] > g > rect': {
 			'fill-opacity': 0.9,
 		},
-		'.chart[data-type=bar] > g > rect.hover': {
+		'.chart[data-type=col] > g > rect.hover': {
 			'fill-opacity': 1,
 		},
 	};
@@ -3100,7 +3100,7 @@ function Tinychart(container) {
 			gChart.removeChild(gChart.children[0]);
 		}
 		_xType = 0; // map: { 0: 'number', 1: 'date', 2: 'string' }
-		_type = 'line'; // line/bar
+		_type = 'line'; // line/col
 		_xMin = Infinity;
 		_xMax = -Infinity;
 		_yMin = Infinity;
@@ -3136,7 +3136,7 @@ function Tinychart(container) {
 			return 360 / _yCount * i;
 		});
 		
-		_type = _forceType || (_xType == 2 ? 'bar' : 'line');
+		_type = _forceType || (_xType == 2 ? 'col' : 'line');
 		gChart.setAttributeNS(null, 'data-type', _type);
 		gChart.setAttributeNS(null, 'data-x-type', _xType);
 		
@@ -3147,26 +3147,26 @@ function Tinychart(container) {
 		gChart.appendChild(pXAxis);
 		
 		var xOffset = 0;
-		if (_type == 'bar') {
+		if (_type == 'col') {
 			var gItems = new Array(_yCount).fill(null).map(function (v, i) {
 				var gItem = document.createElementNS(NS.svg, 'g');
 				gChart.appendChild(gItem);
 				return gItem;
 			});
-			var barWidth = Math.max(10, 100 / _xCount);
+			var colWidth = Math.max(10, 100 / _xCount);
 			
 			for (var i = 0; i < this.data.length; i++) {
 				var val = this.data[i];
 				val.xValue = val[0];
 				val.rects = [];
-				val[0] = xOffset + barWidth / 2;
+				val[0] = xOffset + colWidth / 2;
 				var yOffset = 0;
 				for (var j = 1; j < val.length; j++) {
 					if (isNaN(val[j]) || val[j] === null)
 						continue;
 					var rect = document.createElementNS(NS.svg, 'rect');
 					rect.setAttributeNS(null, 'x', xOffset);
-					rect.setAttributeNS(null, 'width', barWidth);
+					rect.setAttributeNS(null, 'width', colWidth);
 					rect.setAttributeNS(null, 'y', yOffset);
 					rect.setAttributeNS(null, 'height', val[j]);
 					yOffset += val[j];
@@ -3174,7 +3174,7 @@ function Tinychart(container) {
 					_yMin = Math.min(_yMin, yOffset);
 					val.rects.push(rect);
 				}
-				xOffset += barWidth;
+				xOffset += colWidth;
 			}
 			
 			for (var i = 0; i < gItems.length; i++) {
@@ -3266,7 +3266,7 @@ function Tinychart(container) {
 		if (rx < 0 || rx > 1)
 			return false;
 		var xIndex = -1;
-		if (_type == 'bar') {
+		if (_type == 'col') {
 			xIndex = Math.max(0, Math.min(_xCount * rx | 0, _xCount-1));
 		}
 		else {
