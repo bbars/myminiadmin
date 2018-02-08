@@ -2177,6 +2177,11 @@ body.modal-stack-show .modal-stack {
 			<button type="submit">OK</button>
 		</div>
 	</form>
+	<style>
+	#elModalSqlValues > h2 {
+		margin-top: 0;
+	}
+	</style>
 	<script>
 	
 	(function (context, elModalSqlValues, elSqlValuesForm, elSqlValuesSet) {
@@ -2212,6 +2217,8 @@ body.modal-stack-show .modal-stack {
 								catch (e) {
 									// keep value as a string
 								}
+								if (typeof value == 'number' && value.toString() !== input.value)
+									value = input.value;
 								values[input.name] = savedValues[input.name] = value;
 							}
 							resolve(values);
