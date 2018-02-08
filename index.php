@@ -2242,7 +2242,10 @@ body.modal-stack-show .modal-stack {
 	<div class="m-t">X-axis: <select id="elChartXCol"></select></div>
 	<div class="m-t">Y-axis: <span id="elChartYCols"></span></div>
 	<div class="m-t" id="elChartContainer"></div>
-	<div class="m-t" id="elChartInfo"></div>
+	<div class="m-t" id="elChartInfoContainer">
+		<div class="m-t" id="elChartInfoOffset"></div>
+		<div class="m-t" id="elChartInfo"></div>
+	</div>
 	<style>
 	#elModalChart > h2 {
 		margin-top: 0;
@@ -2252,11 +2255,19 @@ body.modal-stack-show .modal-stack {
 		height: 16em;
 		max-height: 50vh;
 	}
+	#elChartInfoContainer {
+		display: flex;
+	}
+	#elChartInfo h4 {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 	</style>
 	<script src="?part=tinychart.js"></script>
 	<script>
 	
-	(function (context, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfo) {
+	(function (context, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfoOffset, elChartInfo) {
 		var stringTypes = ['ENUM','SET','VAR_STRING','STRING'];
 		var numberTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
 		var dateTypes = ['TIMESTAMP','DATE','TIME','DATETIME','NEWDATE'];
@@ -2332,21 +2343,30 @@ body.modal-stack-show .modal-stack {
 				}
 			}
 			
+			var prevValIndex = -1;
 			function onChartContainerEvent(event) {
 				if (event.type == 'hovervalue') {
 					var val = event.detail;
-					var s = [
-						'<b>' + val.x + '</b>',
-					];
-					for (var i = 0; i < val.y.length; i++) {
-						if (typeof val.y[i] == 'undefined') {
-							s.push('');
-						}
-						else {
-							s.push('<span style="color: hsl(' + chart.hues[i] + ', 50%, 50%)">' + val.y[i] + '</span>');
+					if (prevValIndex !== val.index) {
+						while (elChartInfo.children.length)
+							elChartInfo.removeChild(elChartInfo.children[0]);
+						prevValIndex = val.index;
+						var el = document.createElement('h4');
+						el.textContent = val.x instanceof Date && val.x.toISOString
+							? val.x.toISOString().replace(/^(.+)T(.+)(?:\.\d*)Z$/, '$1 $2')
+							: val.x;
+						elChartInfo.appendChild(el);
+						for (var i = 0; i < val.y.length; i++) {
+							el = document.createElement('div');
+							el.textContent = typeof val.y[i] != 'undefined' ? val.y[i] : '';
+							el.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
+							elChartInfo.appendChild(el);
 						}
 					}
-					elChartInfo.innerHTML = s.join('<br/>');
+				}
+				else if (event.type == 'mousemove' && event.currentTarget == elChartContainer) {
+					var x = event.offsetX / elChartContainer.clientWidth;
+					elChartInfoOffset.style.flexBasis = Math.min(1, x) * 100 + '%';
 				}
 			}
 			function onModalEvent(event) {
@@ -2354,10 +2374,13 @@ body.modal-stack-show .modal-stack {
 					redraw();
 				}
 				else if (event.type == 'modal-hide') {
+					prevValIndex = -1;
+					while (elChartInfo.children.length)
+						elChartInfo.removeChild(elChartInfo.children[0]);
 					elModalChart.removeEventListener('change', onModalEvent);
 					elModalChart.removeEventListener('modal-hide', onModalEvent);
 					elChartContainer.removeEventListener('hovervalue', onChartContainerEvent);
-					elChartContainer.removeEventListener('mouseleave', onChartContainerEvent);
+					elChartContainer.removeEventListener('mousemove', onChartContainerEvent);
 					if (chart) {
 						chart.remove();
 					}
@@ -2367,7 +2390,7 @@ body.modal-stack-show .modal-stack {
 			elModalChart.addEventListener('change', onModalEvent);
 			elModalChart.addEventListener('modal-hide', onModalEvent);
 			elChartContainer.addEventListener('hovervalue', onChartContainerEvent);
-			elChartContainer.addEventListener('mouseleave', onChartContainerEvent);
+			elChartContainer.addEventListener('mousemove', onChartContainerEvent);
 			
 			Modal.show(elModalChart);
 			redraw();
@@ -2380,7 +2403,7 @@ body.modal-stack-show .modal-stack {
 			context.showChart(result);
 		});
 		
-	})(this, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfo);
+	})(this, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfoOffset, elChartInfo);
 	
 	</script>
 </div>
@@ -3260,6 +3283,7 @@ function Tinychart(container) {
 			detail: {
 				x: val.xValue,
 				y: val.slice(1),
+				index: xIndex,
 				dots: val.dots,
 				rects: val.rects,
 				hovered: _hovered,
