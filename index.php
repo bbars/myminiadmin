@@ -1085,6 +1085,7 @@ function createTableFromResult(result) {
 	}
 	
 	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY)$/i;
+	var urlValueRe = /^[a-z]+:\/\/[^\s/]+\S*$/;
 	var y = 0;
 	function appendRowsChunk() {
 		var limY = Math.min(y + 300, result.rows.length);
@@ -1107,6 +1108,13 @@ function createTableFromResult(result) {
 					value = value.substr(0, 200);
 				}
 				td.textContent = value;
+				if (urlValueRe.test(value)) {
+					var a = document.createElement('a');
+					a.className = 'value-link';
+					a.href = value;
+					a.target = '_blank';
+					td.insertBefore(a, td.firstChild);
+				}
 				tr.appendChild(td);
 			}
 			tbody.appendChild(tr);
@@ -2001,7 +2009,35 @@ body.modal-stack-show .modal-stack {
 	margin: 0.25em 0;
 }
 
-
+.value-link {
+	display: inline-block;
+	position: relative;
+	text-decoration: none;
+	width: 1em;
+	height: 1em;
+	line-height: 1em;
+	text-align: center;
+	position: absolute;
+	color: #fff;
+	background: #00f;
+	border-radius: 0.1em;
+	font-size: 1.25em;
+	visibility: hidden;
+}
+.value-link:visited {
+	background: #90f;
+}
+.value-link:hover {
+	opacity: 0.8;
+}
+:hover > .value-link {
+	visibility: visible;
+}
+.value-link:after {
+	content: '\2192';
+	display: inline-block;
+	transform: rotate(-42deg);
+}
 
 </style>
 </head>
