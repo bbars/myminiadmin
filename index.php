@@ -313,10 +313,10 @@ class Api {
 				}
 			}
 			elseif ($mysqli->error) {
-				$result['error'] = (new MyError('MYSQL_ERROR', $mysqli->error))->describe();
+				$result['error'] = (new MyError('MYSQL_ERROR', $mysqli->sqlstate . ': ' . $mysqli->error))->describe();
 			}
 			$resultset[] = $result;
-		} while ($mysqli->more_results());
+		} while ($success && $mysqli->more_results());
 		return $resultset;
 	}
 	
@@ -2531,6 +2531,50 @@ editor.ace.setOptions({
 editor.ace.completers.push(editor._completers.base);
 editor.ace.completers.push(editor._completers.table);
 editor.ace.completers.push(editor._completers.column);
+
+elResultset.EM_1 = (function () {
+	var div = document.createElement('div');
+	div.setAttribute('style', 'width: 10em');
+	elResultset.appendChild(div);
+	var res = div.clientWidth / 10;
+	elResultset.removeChild(div);
+	return res;
+})();
+
+editor.addEventListener('keydown', function (event) {
+	var num2 = 98;
+	var num4 = 100;
+	var num6 = 102;
+	var num8 = 104;
+	var pgup = 33;
+	var pgdn = 34;
+	var home = 36;
+	var end = 35;
+	var key = event.keyCode;
+	if (event.altKey && event.ctrlKey) {
+		if ([num2, num4, num6, num8].indexOf(key) > -1) {
+			elResultset.scrollBy(
+				elResultset.EM_1 * 3 * ((key == num6) - (key == num4)),
+				elResultset.EM_1 * 3 * ((key == num2) - (key == num8))
+			);
+		}
+		else if ([pgdn, pgup].indexOf(key) > -1) {
+			elResultset.scrollBy(
+				elResultset.clientHeight * (key == pgdn ? 1 : -1) * !!event.shiftKey,
+				elResultset.clientWidth  * (key == pgdn ? 1 : -1) * !event.shiftKey
+			);
+		}
+		else if ([home, end].indexOf(key) > -1) {
+			elResultset.scrollBy(
+				(elResultset.scrollHeight + elResultset.clientHeight) * (key == end ? 1 : -1) * !!event.shiftKey,
+				(elResultset.scrollWidth  + elResultset.clientWidth)  * (key == end ? 1 : -1) * !event.shiftKey
+			);
+		}
+		event.stopPropagation();
+		event.preventDefault();
+		return false;
+	}
+});
 
 elCreateConnection.addEventListener('click', function (event) {
 	createNewConnection()
