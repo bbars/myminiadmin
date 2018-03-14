@@ -862,8 +862,8 @@ function parseSql(s) {
 	var reAny = /`|'|"/g;
 	var reClosings = {
 		'`': /(`+)/g,
-		'"': /([\\"]+)/g,
-		"'": /([\\']+)/g,
+		'"': /(\\*")/g,
+		"'": /(\\*')/g,
 	};
 	var reCommented = /--+\s+[^\r\n]*$/;
 	var m;
@@ -980,12 +980,13 @@ function executeQuery(sql, safeRows) {
 			}
 		})
 		.catch(function (error) {
-			showError(error);
+			showError(error, true);
 		})
 		.then(function (resultset) {
 			cleanupConsole('error');
 			
 			var rowCounts = [];
+			var elErrors = [];
 			for (var i = 0; i < resultset.length; i++) {
 				var result = resultset[i];
 				var tab = document.createElement('div');
@@ -994,7 +995,7 @@ function executeQuery(sql, safeRows) {
 				tabContents.classList.add('tab-contents');
 				tab.appendChild(tabContents);
 				if (result.error) {
-					showError(result.error, tabContents);
+					elErrors.push(showError(result.error, tabContents));
 				}
 				else {
 					var table = createTableFromResult(result);
@@ -1028,6 +1029,10 @@ function executeQuery(sql, safeRows) {
 				refreshBases();
 			else if (thenRefreshTables)
 				refreshTables();
+			
+			if (elErrors.length > 0) {
+				elResultset.scrollTo(0, elErrors[0][1].offsetTop);
+			}
 			
 			if (rowCounts.length) {
 				// showMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
@@ -1279,10 +1284,16 @@ function showError(error, duplicate) {
 			elResultset.appendChild(tab);
 			duplicate = tabContents;
 		}
-		duplicate.appendChild(errorMessage.cloneNode(true));
+		errorMessageDup = errorMessage.cloneNode(true);
+		duplicate.appendChild(errorMessageDup);
+		return [
+			errorMessage,
+			errorMessageDup,
+		];
 	}
-	
-	return errorMessage;
+	else {
+		return [errorMessage];
+	}
 }
 
 function processLocationParams(paramsStr, execute) {
