@@ -2719,29 +2719,42 @@ function updateTableHeaderScroll() {
 }
 
 var splitterCaptured = false;
-elMain.addEventListener('mousedown', function (event) {
+function onSplitterDown(event) {
 	if (!event.target.classList.contains('splitter'))
 		return;
-	splitterCaptured = event.clientY;
+	var clientY = event.touches && event.touches[0] && event.touches[0].clientY || event.clientY;
+	if (isNaN(clientY))
+		return;
+	splitterCaptured = clientY;
 	event.preventDefault();
 	event.stopPropagation();
-	return false;
-});
-elMain.addEventListener('mouseup', function (event) {
+}
+function onSplitterUp(event) {
 	splitterCaptured = false;
 	config.splitter_elMain = parseFloat(elQuery.style.flexBasis);
-});
-elMain.addEventListener('mousemove', function (event) {
+}
+function onSplitterMove(event) {
 	if (splitterCaptured === false)
 		return;
-	var h = 100 * event.clientY / elMain.clientHeight;
+	var clientY = event.touches && event.touches[0] && event.touches[0].clientY || event.clientY;
+	if (isNaN(clientY))
+		return;
+	var h = 100 * clientY / elMain.clientHeight;
 	elQuery.style.flexBasis = h + '%';
 	elResultset.style.flexBasis = (100 - h) + '%';
 	event.preventDefault();
 	event.stopPropagation();
 	window.dispatchEvent(new Event('resize'));
 	return false;
-});
+}
+
+elMain.addEventListener('mousedown', onSplitterDown);
+elMain.addEventListener('mousemove', onSplitterMove);
+elMain.addEventListener('mouseup', onSplitterUp);
+
+elMain.addEventListener('touchstart', onSplitterDown);
+elMain.addEventListener('touchmove', onSplitterMove);
+elMain.addEventListener('touchend', onSplitterUp);
 
 (function () {
 	var h = parseFloat(config.splitter_elMain);
