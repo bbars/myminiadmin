@@ -3294,6 +3294,8 @@ function Tinychart(container) {
 				gItem.appendChild(gItem.dots)
 				return gItem;
 			});
+			if (_yMin > 0)
+				_yMin = 0;
 			
 			var dotTpl = document.createElementNS(NS.svg, 'circle');
 			dotTpl.setAttributeNS(null, 'r', '1');
