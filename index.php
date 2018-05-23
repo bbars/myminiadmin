@@ -1010,8 +1010,8 @@ function executeQuery(sql, safeRows) {
 						tabContents.appendChild(table);
 						elResultset.__resultsTables.push(table);
 						var chartBtn = document.createElement('button');
-						chartBtn.innerHTML = '&#x25A8;';
-						chartBtn.className = 'btn-chart m-l';
+						chartBtn.innerHTML = '&#x1f4c8;';
+						chartBtn.className = 'btn-chart btn-flat m-l';
 						tabContents.appendChild(chartBtn);
 						chartBtn.__table = table;
 					}
@@ -1591,6 +1591,13 @@ button {
 	padding: 0.5em 0.75em;
 	min-width: 2em;
 	text-align: center;
+}
+button.btn-flat {
+	border: none;
+	background: #eee;
+	text-shadow: none;
+	padding: 0.5em;
+	min-width: initial;
 }
 
 .control-row {
