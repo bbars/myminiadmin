@@ -579,6 +579,11 @@ Promise.prototype.done = function (cb) {
 	return this.then(function (data) { cb(data); return data; }, function (error) { cb(error); return Promise.reject(error) });
 };
 
+function backtickEscape(s) {
+	return s.replace(backtickEscape.re, '``');
+}
+backtickEscape.re = /`/g;
+
 function apiCall(fn, params) {
 	var apiCallArguments = Array.prototype.slice.call(arguments, 0);
 	params = Array.prototype.slice.call(apiCallArguments, 0);
@@ -829,7 +834,7 @@ function refreshTables() {
 			div.value = table;
 			div.dataset.table = table;
 			var a = document.createElement('a');
-			a.href = '#!sql=SELECT * FROM `' + table + '`;';
+			a.href = '#!sql=SELECT * FROM `' + backtickEscape(table) + '`;';
 			a.textContent = table;
 			div.appendChild(a);
 			elTables.appendChild(div);
@@ -1009,11 +1014,22 @@ function executeQuery(sql, safeRows) {
 					if (table) {
 						tabContents.appendChild(table);
 						elResultset.__resultsTables.push(table);
+						
+						var resultCtl = document.createElement('div');
+						resultCtl.classList.add('result-ctl');
+						tabContents.appendChild(resultCtl);
+						
 						var chartBtn = document.createElement('button');
 						chartBtn.innerHTML = '&#x1f4c8;';
 						chartBtn.className = 'btn-chart btn-flat m-l';
-						tabContents.appendChild(chartBtn);
+						resultCtl.appendChild(chartBtn);
 						chartBtn.__table = table;
+						
+						var exportBtn = document.createElement('button');
+						exportBtn.innerHTML = '&#x1f4be;';
+						exportBtn.className = 'btn-export btn-flat m-l';
+						resultCtl.appendChild(exportBtn);
+						exportBtn.__table = table;
 					}
 					else if (!result.info) {
 						var empty = document.createElement('div');
@@ -1067,12 +1083,12 @@ function createTableFromResult(result) {
 		}
 		if (result.fields[x].orgtable && result.fields[x].orgname) {
 			editor.addCompletion('column', result.fields[x].orgname);
-			hint.push('`'+ result.fields[x].orgtable +'`.`'+ result.fields[x].orgname +'`');
+			hint.push('`'+ backtickEscape(result.fields[x].orgtable) +'`.`'+ backtickEscape(result.fields[x].orgname) +'`');
 			if (result.fields[x].name != result.fields[x].orgname)
-				hint.push('AS `' + result.fields[x].name + '`');
+				hint.push('AS `' + backtickEscape(result.fields[x].name) + '`');
 		}
 		else {
-			hint.push('`' + result.fields[x].name + '`');
+			hint.push('`' + backtickEscape(result.fields[x].name) + '`');
 		}
 		hint.push(result.fields[x].type + (result.fields[x].length ? ' (' + result.fields[x].length + ')' : ''));
 		th.title = hint.join('\n');
@@ -1591,6 +1607,7 @@ button {
 	padding: 0.5em 0.75em;
 	min-width: 2em;
 	text-align: center;
+	cursor: pointer;
 }
 button.btn-flat {
 	border: none;
@@ -1713,10 +1730,21 @@ button.btn-flat {
 	white-space: initial;
 }
 
+.tab > .tab-contents .result-ctl {
+	display: inline-flex;
+	flex-wrap: wrap;
+	flex-direction: column;
+	margin-right: 1em;
+}
+
 .m-t { margin-top:    0.5em; }
 .m-r { margin-right:  0.5em; }
 .m-b { margin-bottom: 0.5em; }
 .m-l { margin-left:   0.5em; }
+
+.nowrap {
+	white-space: nowrap;
+}
 
 #elConsole {
 	background: #444;
@@ -2354,7 +2382,7 @@ body.modal-stack-show .modal-stack {
 					var elLabel = document.createElement('label');
 					elChartYCols.appendChild(elLabel);
 					elLabel.textContent = elLabel.innerText = result.fields[i].name;
-					elLabel.className = 'm-r';
+					elLabel.className = 'm-r nowrap';
 					var elCheckbox = document.createElement('input');
 					elLabel.insertBefore(elCheckbox, elLabel.firstChild);
 					elCheckbox.type = 'checkbox';
@@ -2465,6 +2493,120 @@ body.modal-stack-show .modal-stack {
 		});
 		
 	})(this, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfoOffset, elChartInfo);
+	
+	</script>
+</div>
+
+<div id="elModalExport" class="modal modal-full">
+	<span class="modal-close"></span>
+	<h2>Export</h2>
+	<div class="m-t">Columns: <span id="elExportCols"></span></div>
+	<textarea class="m-t" id="elExportResult" readonly></textarea>
+	<style>
+	#elModalExport > h2 {
+		margin-top: 0;
+	}
+	#elExportResult {
+		display: block;
+		width: 100%;
+		resize: vertical;
+		height: 10em;
+		font-family: monospace;
+	}
+	</style>
+	<script>
+	
+	(function (context, elModalExport, elExportCols, elExportResult) {
+		context.showExport = function (result) {
+			while (elExportCols.children.length)
+				elExportCols.removeChild(elExportCols.children[0]);
+			elExportResult.value = '';
+			
+			for (var i = 0; i < result.fields.length; i++) {
+				var elLabel = document.createElement('label');
+				elLabel.textContent = elLabel.innerText = result.fields[i].name;
+				elLabel.className = 'm-r nowrap';
+				var elCheckbox = document.createElement('input');
+				elLabel.insertBefore(elCheckbox, elLabel.firstChild);
+				elCheckbox.type = 'checkbox';
+				elCheckbox.value = i;
+				elCheckbox.title = result.fields[i].name;
+				elCheckbox.checked = true;
+				elExportCols.appendChild(elLabel);
+				elExportCols.appendChild(document.createTextNode('\n'));
+			}
+			
+			function redraw() {
+				elExportResult.value = '';
+				var checkedColsNames = [];
+				var checkedCols = Array.prototype.slice.call(elExportCols.querySelectorAll('input:checked'), 0);
+				var tables = [];
+				checkedCols = checkedCols.map(function (v, i) {
+					var col = +v.value
+					var colName = '' + v.title;
+					colName = '`' + backtickEscape(colName) + '`';
+					checkedColsNames.push(colName);
+					var table = result.fields[col].orgtable;
+					if (tables.indexOf(table) < 0)
+						tables.push(table);
+					return col;
+				});
+				var table = tables.length != 1 ? '??' : '`' + backtickEscape(tables[0]) + '`';
+				
+				if (!checkedCols.length)
+					return;
+				
+				var lines = [];
+				var i, x, y, v;
+				for (i = 0; i < checkedCols.length; i++) {
+					x = checkedCols[i];
+					for (y = 0; y < result.rows.length; y++) {
+						v = result.rows[y][x];
+						if (typeof v == 'number')
+							v = v.toString();
+						else if (v === null)
+							v = 'null';
+						else
+							v = '"' + ('' + v).replace(/"/g, '""') + '"';
+						
+						if (!lines[y])
+							lines[y] = [];
+						lines[y][i] = v;
+					}
+				}
+				
+				lines = lines.map(function (line) {
+					return '(' + line.join(', ') + ')';
+				});
+				
+				elExportResult.value =
+					'INSERT INTO ' + table + '\n'
+					+ '(' + checkedColsNames.join(', ') + ')\n'
+					+ 'VALUES\n'
+					+ lines.join(',\n') + ';'
+				;
+			}
+			
+			function onModalEvent(event) {
+				if (event.type == 'change') {
+					redraw();
+				}
+			}
+			
+			elModalExport.addEventListener('change', onModalEvent);
+			
+			Modal.show(elModalExport);
+			redraw();
+		};
+		
+		elResultset.addEventListener('click', function (event) {
+			if (!event.target.classList.contains('btn-export'))
+				return;
+			var result = event.target.__table.__result;
+			context.showExport(result);
+		});
+		
+	})(this, elModalExport, elExportCols, elExportResult);
 	
 	</script>
 </div>
@@ -2636,13 +2778,13 @@ elTables.addEventListener('click', function (event) {
 		sql = '';
 		document.execCommand('selectAll');
 		if (event.shiftKey) {
-			sql = (event.altKey ? 'SHOW CREATE TABLE' : 'DESCRIBE') + ' `' + table + '`;';
+			sql = (event.altKey ? 'SHOW CREATE TABLE' : 'DESCRIBE') + ' `' + backtickEscape(table) + '`;';
 		}
 		else if (event.ctrlKey) {
 			document.execCommand('insertText', false, table);
 		}
 		else if (!event.altKey) {
-			sql = 'SELECT * FROM `' + table + '`;';
+			sql = 'SELECT * FROM `' + backtickEscape(table) + '`;';
 		}
 		
 		if (sql) {
