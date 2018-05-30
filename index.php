@@ -1735,6 +1735,8 @@ button.btn-flat {
 	flex-wrap: wrap;
 	flex-direction: column;
 	margin-right: 1em;
+	position: sticky;
+	top: 1em;
 }
 
 .m-t { margin-top:    0.5em; }
