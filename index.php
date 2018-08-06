@@ -1481,6 +1481,8 @@ body.dragover:after {
 	background: #eee;
 	flex: 1 15%;
 	max-height: 100%;
+	box-shadow: #fff -1px 0 0 0 inset, #0003 1px 0 0 0;
+	z-index: 5;
 }
 #elAside > * {
 	padding: 1em;
@@ -1617,6 +1619,14 @@ button.btn-flat {
 	min-width: initial;
 }
 
+button:focus,
+select:focus,
+input:focus,
+textarea:focus {
+	outline: rgba(127,127,127,0.75) 1px dotted;
+	outline-offset: -3px;
+}
+
 .control-row {
 	display: flex;
 }
@@ -1638,7 +1648,7 @@ button.btn-flat {
 }
 
 #elButtons {
-	padding: 0;
+	padding: 1px;
 	/*font-size: 2em;*/
 	justify-content: stretch;
 	border-top: none;
