@@ -2224,28 +2224,36 @@ body.modal-stack-show .modal-stack {
 		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="16">Hex</label>
 		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="2">Binary</label>
 	</div>
-	<div id="elBlobValueEncoded"></div>
+	<div id="elBlobValueEncoded" contenteditable="true"></div>
 	<script>
 	
 	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded) {
-		function encode(value, base) {
+		var bigValuesRe = /(BLOB|STRING|GEOMETRY)$/i;
+		var intValuesRe = /(CHAR|INT|LONG)$/i;
+		
+		function encode(value, type, base) {
 			base = base || elModalBlobValue.querySelector('[name="blob-value-encode-base"]:checked').value;
 			if (base == 256) {
 				elBlobValueEncoded.textContent = value;
 				return;
 			}
-			var len = Math.ceil(8 / Math.log2(base));
-			var fill = new Array(len).fill('0').join('');
+			var chunkSize = Math.ceil(8 / Math.log2(base));
+			var fill = new Array(chunkSize).fill('0').join('');
 			var decoded = [];
-			if (typeof value != 'string')
+			
+			if (intValuesRe.test(type)) {
+				return; // TODO: convert int64
+			}
+			else if (typeof value === 'string') {
+				for (var i = 0; i < value.length; i++) {
+					decoded.push((fill + value.charCodeAt(i).toString(base)).slice(-chunkSize));
+				}
+			}
+			else {
 				return;
-			for (var i = 0; i < value.length; i++) {
-				decoded.push((fill + value.charCodeAt(i).toString(base)).slice(-len));
 			}
 			elBlobValueEncoded.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
 		}
-		
-		var bigValuesRe = /(BLOB|STRING|GEOMETRY)$/i;
 		
 		elResultset.addEventListener('click', function (event) {
 			if (!event.ctrlKey || !bigValuesRe.test(event.target.getAttribute('data-type')))
@@ -2253,13 +2261,28 @@ body.modal-stack-show .modal-stack {
 			var td = event.target;
 			
 			elModalBlobValue.addEventListener('change', function (event) {
-				encode(td.__value);
+				encode(td.__value, td.dataset.type);
 			});
 			
 			elModalBlobValueTitle.textContent = td.getAttribute('data-name') + ' (' + td.getAttribute('data-type') + ')';
-			encode(td.__value);
+			encode(td.__value, td.dataset.type);
 			
 			Modal.show(elModalBlobValue);
+		});
+		
+		elBlobValueEncoded.addEventListener('keydown', function (event) {
+			if (event.ctrlKey) {
+				if (event.keyCode === 86 || event.keyCode === 88) { // ctrl+x, ctrl+v
+					event.preventDefault();
+					return false;
+				}
+				return true;
+			}
+			// keycode: http://www.programming-magic.com/file/20080205232140/keycode_table.html
+			if (33 <= event.keyCode && event.keyCode <= 40)
+				return true;
+			event.preventDefault();
+			return false;
 		});
 	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded);
 	
