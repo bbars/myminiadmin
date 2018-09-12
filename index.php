@@ -2139,8 +2139,8 @@ body.modal-stack-show .modal-stack {
 </div>
 <div id="elModalStat" class="modal">
 	<div id="elStat" class="m-b"></div>
-	<canvas id="elQpsChart"></canvas>
-	<div id="elStatProcesslist"></div>
+	<canvas id="elQpsChart" class="m-b"></canvas>
+	<div id="elStatProcesslist" class="m-b"></div>
 	<script src="?part=smoothie.js"></script>
 	<script>
 	
@@ -2437,7 +2437,7 @@ body.modal-stack-show .modal-stack {
 					var item = [];
 					var x = result.rows[i][xCol];
 					if (xTypeIsDate) {
-						x = new Date(x.split(' ', 2).join('T'));
+						x = new Date((x + ' 00:00:00').split(' ', 2).join('T') + 'Z');
 					}
 					item[0] = x;
 					
@@ -2447,7 +2447,6 @@ body.modal-stack-show .modal-stack {
 					data.push(item);
 				}
 				
-				console.log(xCol, yCols, data);
 				chart.setData(data);
 				for (var i = 0; i < yCheckedInputs.length; i++) {
 					yCheckedInputs[i].parentElement.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
