@@ -584,6 +584,11 @@ function backtickEscape(s) {
 }
 backtickEscape.re = /`/g;
 
+function quotEscape(s) {
+	return s.replace(quotEscape.re, '\\$1');
+}
+quotEscape.re = /(['"])/g;
+
 function apiCall(fn, params) {
 	var apiCallArguments = Array.prototype.slice.call(arguments, 0);
 	params = Array.prototype.slice.call(apiCallArguments, 0);
@@ -1079,10 +1084,14 @@ function createTableFromResult(result) {
 	var tbody = document.createElement('tbody');
 	var tr = document.createElement('tr');
 	var fieldsCount = result.fields.length;
+	var orgtables = {};
 	for (var x = 0; x < fieldsCount; x++) {
 		var th = document.createElement('th');
 		th.textContent = result.fields[x].name;
 		var hint = [];
+		if (result.fields[x].orgtable) {
+			orgtables[result.fields[x].orgtable] = 1;
+		}
 		if (selectedBase == result.fields[x].db && result.fields[x].orgtable) {
 			setCurrentTable(result.fields[x].orgtable);
 		}
@@ -1100,6 +1109,8 @@ function createTableFromResult(result) {
 		
 		tr.appendChild(th);
 	}
+	orgtables = Object.keys(orgtables);
+	table.dataset.orgtables = orgtables.join(', ');
 	
 	thead.appendChild(tr);
 	
@@ -1844,6 +1855,13 @@ table.result tbody tr > * {
 	word-wrap: inherit;
 	text-overflow: ellipsis;
 	overflow: hidden;
+}
+table.result[data-orgtables]:before {
+	content: attr(data-orgtables);
+	display: table-caption;
+	padding: 0 0.68em 0.5em;
+	color: #999;
+	font-size: 0.85em;
 }
 #elResultset table.result tbody tr > *:hover {
 	outline: rgba(128,128,128, 0.2) 2px solid;
@@ -2717,6 +2735,9 @@ var editor = {
 		sm.snippetMap.sql.push(snippet);
 		sm.snippetNameMap.sql[snippet.name] = snippet;
 	},
+	insertText: function (text) {
+		this.ace.execCommand('insertstring', text);
+	},
 	_completers: {
 		base: new SQLNamesCompleter('base'),
 		table: new SQLNamesCompleter('table'),
@@ -2735,6 +2756,7 @@ editor.ace.setOptions({
 editor.ace.completers.push(editor._completers.base);
 editor.ace.completers.push(editor._completers.table);
 editor.ace.completers.push(editor._completers.column);
+editor.ace.commands.bindKey({win: "F8", mac: "Command-D"}, "removeline");
 
 elResultset.EM_1 = (function () {
 	var div = document.createElement('div');
@@ -2813,27 +2835,30 @@ refreshConnections().then(function () {
 	document.location.hash = '';
 });
 elTables.addEventListener('click', function (event) {
-	if (event.target.nodeName != 'A')
+	if (event.target.nodeName != 'A') {
 		return;
-	
-	var table = event.target.parentElement.dataset.table;
+	}
+	var a = event.target;
+	var table = a.parentElement.dataset.table;
 	if (table) {
 		editor.focus();
 		sql = '';
-		document.execCommand('selectAll');
 		if (event.shiftKey) {
 			sql = (event.altKey ? 'SHOW CREATE TABLE' : 'DESCRIBE') + ' `' + backtickEscape(table) + '`;';
 		}
 		else if (event.ctrlKey) {
-			document.execCommand('insertText', false, table);
+			if (!/^[a-z_][a-z0-9_]*$/i.test(table))
+				table = '`' + backtickEscape(table) + '`';
+			editor.insertText(table);
 		}
 		else if (!event.altKey) {
-			sql = 'SELECT * FROM `' + backtickEscape(table) + '`;';
+			sql = /#.*(?:!|&)sql=([^#]+)/.exec(a.href);
+			sql = sql && decodeURIComponent(sql[1]);
 		}
 		
 		if (sql) {
-			document.execCommand('insertText', false, sql);
-			executeQuery(editor.getValue());
+			editor.setValue(sql);
+			executeQuery(sql);
 		}
 	}
 	
