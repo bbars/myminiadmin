@@ -274,7 +274,7 @@ class Api {
 		$success = $mysqli->multi_query($sql);
 		
 		$resultset = [];
-		do {
+		while ($success && $mysqli->more_results()) {
 			$success = $mysqli->next_result(); // skip set sql_select_limit
 			
 			$result = array(
@@ -316,7 +316,7 @@ class Api {
 				$result['error'] = (new MyError('MYSQL_ERROR', $mysqli->sqlstate . ': ' . $mysqli->error))->describe();
 			}
 			$resultset[] = $result;
-		} while ($success && $mysqli->more_results());
+		}
 		return $resultset;
 	}
 	
