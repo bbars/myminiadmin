@@ -1438,7 +1438,7 @@ body,
 	height: 100%;
 	margin: 0;
 	padding: 0;
-	font-family: 'Segoe UI';
+	font-family: 'Segoe UI', 'Ubuntu', sans-serif;
 	font-size: 3.5mm;
 }
 
@@ -1552,6 +1552,13 @@ body.dragover:after {
 	}
 	#elAside.showing {
 		left: 0;
+	}
+	
+	#elAside > * {
+		user-select: none;
+	}
+	#elAside.showing > * {
+		user-select: initial;
 	}
 	
 	#elAside.showing:before {
@@ -1717,7 +1724,7 @@ textarea:focus {
 }
 
 #elQuery {
-	font-family: 'Consolas', monospace;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 	display: block;
 	width: 100%;
 	height: 15%;
@@ -1776,7 +1783,7 @@ textarea:focus {
 
 #elConsole {
 	background: #444;
-	font-family: 'Consolas', monospace;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 }
 #elConsole > .message * {
 	color: #ddd;
@@ -1807,13 +1814,13 @@ textarea:focus {
 
 .message.error .error-code {
 	color: #f99 !important;
-	font-family: 'Consolas', monospace;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 }
 .message.error .error-message {
 	display: block;
 	margin: 0.5em 0;
 	white-space: pre-wrap;
-	font-family: 'Consolas', monospace;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 }
 
 table.result {
@@ -1841,7 +1848,7 @@ table.result tr > * {
 	vertical-align: baseline;
 }
 table.result tbody {
-	font-family: 'Consolas', monospase;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 	border: #ddd 2px solid;
 	border-style: solid none;
 }
@@ -1969,7 +1976,7 @@ table.result * tr.empty > td {
 }
 .modal-stack:after {
 	content: 'Close (Esc)';
-	font-family: monospace;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 	display: block;
 	padding-top: 1em;
 	color: #fff;
@@ -2059,7 +2066,7 @@ body.modal-stack-show .modal-stack {
 #elBlobValueEncoded {
 	display: block;
 	background: #eee;
-	font-family: Consolas, monospace;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 	border-radius: 1px;
 	padding: 0.5em;
 	box-shadow: rgba(0,0,0, 0.15) 1px 1px 1px 0 inset;
@@ -2573,7 +2580,7 @@ body.modal-stack-show .modal-stack {
 		width: 100%;
 		resize: vertical;
 		height: 10em;
-		font-family: monospace;
+		font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 	}
 	</style>
 	<script>
