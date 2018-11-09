@@ -2416,12 +2416,29 @@ body.modal-stack-show .modal-stack {
 	}
 	#elChartInfoContainer {
 		display: flex;
+		overflow: hidden;
 	}
 	#elChartInfo h4 {
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	#elChartInfo > div {
+		position: relative;
+		min-height: 1em;
+	}
+	#elChartInfo > div:before {
+		content: attr(data-label);
+		position: absolute;
+		right: 100%;
+		margin-right: 0.35em;
+		opacity: 0.65;
+		filter: grayscale(0.75);
+	}
+	#elChartInfo > div:empty:before {
+		opacity: 0.25;
+	}
+	
 	</style>
 	<script src="?part=tinychart.js"></script>
 	<script>
@@ -2457,6 +2474,7 @@ body.modal-stack-show .modal-stack {
 					elLabel.insertBefore(elCheckbox, elLabel.firstChild);
 					elCheckbox.type = 'checkbox';
 					elCheckbox.value = i;
+					elCheckbox.dataset.label = result.fields[i].name;
 					if (!yChecked && i != elChartXCol.value) {
 						elCheckbox.checked = yChecked = true;
 					}
@@ -2499,6 +2517,9 @@ body.modal-stack-show .modal-stack {
 				for (var i = 0; i < yCheckedInputs.length; i++) {
 					yCheckedInputs[i].parentElement.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
 				}
+				chart._labels = yCheckedInputs.map(function (v, i) {
+					return v.dataset.label;
+				});
 			}
 			
 			var prevValIndex = -1;
@@ -2516,6 +2537,7 @@ body.modal-stack-show .modal-stack {
 						elChartInfo.appendChild(el);
 						for (var i = 0; i < val.y.length; i++) {
 							el = document.createElement('div');
+							el.dataset.label = chart._labels[i];
 							el.textContent = typeof val.y[i] != 'undefined' ? val.y[i] : '';
 							el.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
 							elChartInfo.appendChild(el);
