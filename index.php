@@ -1748,6 +1748,14 @@ textarea:focus {
 #elResultset > * + * {
 	border-top: #444 2px dashed;
 }
+#elResultset.move-capture {
+	cursor: move;
+	cursor: -webkit-grab;
+}
+#elResultset.move-captured {
+	cursor: move;
+	cursor: -webkit-grabbing;
+}
 
 .tab {
 	display: block;
@@ -2830,6 +2838,46 @@ editor.addEventListener('keydown', function (event) {
 		return false;
 	}
 });
+
+// grab-scroll elResultSet:
+(function (elResultset) {
+	elResultset.__moveCap = null;
+	window.addEventListener('keydown', function (event) {
+		if (event.keyCode == 0x20) {
+			elResultset.classList.add('move-capture');
+			event.preventDefault();
+		}
+	});
+	window.addEventListener('keyup', function (event) {
+		if (event.keyCode == 0x20) {
+			elResultset.classList.remove('move-capture');
+		}
+	});
+	elResultset.addEventListener('mousedown', function (event) {
+		if (elResultset.classList.contains('move-capture')) {
+			event.preventDefault();
+			elResultset.__moveCap = {
+				down: event,
+				scrollLeft: elResultset.scrollLeft,
+				scrollTop: elResultset.scrollTop,
+			};
+			elResultset.classList.add('move-captured');
+		}
+	});
+	window.addEventListener('mouseup', function (event) {
+		elResultset.__moveCap = null;
+		elResultset.classList.remove('move-captured');
+	});
+	window.addEventListener('mousemove', function (event) {
+		if (!elResultset.__moveCap)
+			return;
+		event.preventDefault();
+		elResultset.scrollTo(
+			elResultset.__moveCap.scrollLeft + (elResultset.__moveCap.down.pageX - event.pageX),
+			elResultset.__moveCap.scrollTop + (elResultset.__moveCap.down.pageY - event.pageY)
+		);
+	});
+})(elResultset);
 
 elCreateConnection.addEventListener('click', function (event) {
 	createNewConnection()
