@@ -2840,43 +2840,73 @@ editor.addEventListener('keydown', function (event) {
 });
 
 // grab-scroll elResultSet:
-(function (elResultset) {
-	elResultset.__moveCap = null;
+(function (el) {
+	var moveCap = null;
+	var moveTmr = null;
 	window.addEventListener('keydown', function (event) {
 		if (event.keyCode == 0x20) {
-			elResultset.classList.add('move-capture');
+			el.classList.add('move-capture');
 			event.preventDefault();
 		}
 	});
 	window.addEventListener('keyup', function (event) {
 		if (event.keyCode == 0x20) {
-			elResultset.classList.remove('move-capture');
+			el.classList.remove('move-capture');
 		}
 	});
-	elResultset.addEventListener('mousedown', function (event) {
-		if (elResultset.classList.contains('move-capture')) {
+	el.addEventListener('mousedown', function (event) {
+		if (moveTmr) {
+			clearInterval(moveTmr.tmr);
+			moveTmr = null;
+		}
+		if (el.classList.contains('move-capture')) {
 			event.preventDefault();
-			elResultset.__moveCap = {
+			moveCap = {
 				down: event,
-				scrollLeft: elResultset.scrollLeft,
-				scrollTop: elResultset.scrollTop,
+				scrollLeft: el.scrollLeft,
+				scrollTop: el.scrollTop,
 			};
-			elResultset.classList.add('move-captured');
+			el.classList.add('move-captured');
+			moveTmr = {};
 		}
 	});
 	window.addEventListener('mouseup', function (event) {
-		elResultset.__moveCap = null;
-		elResultset.classList.remove('move-captured');
+		moveCap = null;
+		el.classList.remove('move-captured');
+		if (!moveTmr)
+			return;
+		if (moveTmr.curT && now() - moveTmr.curT < 300) {
+			clearInterval(moveTmr.tmr);
+			moveTmr.m = 1;
+			moveTmr.dt = (now() - moveTmr.curT) / 20;
+			moveTmr.tmr = setInterval(function () {
+				var dx = (moveTmr.curX - moveTmr.prevX) / moveTmr.dt * moveTmr.m;
+				var dy = (moveTmr.curY - moveTmr.prevY) / moveTmr.dt * moveTmr.m;
+				moveTmr.m *= 0.9;
+				if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+					el.scrollBy(dx, dy);
+				}
+				else {
+					clearInterval(moveTmr.tmr);
+					moveTmr = null;
+				}
+			}, 20);
+		}
 	});
 	window.addEventListener('mousemove', function (event) {
-		if (!elResultset.__moveCap)
+		if (!moveCap)
 			return;
 		event.preventDefault();
-		elResultset.scrollTo(
-			elResultset.__moveCap.scrollLeft + (elResultset.__moveCap.down.pageX - event.pageX),
-			elResultset.__moveCap.scrollTop + (elResultset.__moveCap.down.pageY - event.pageY)
-		);
+		moveTmr.prevX = moveTmr.curX;
+		moveTmr.prevY = moveTmr.curY;
+		moveTmr.curX = moveCap.scrollLeft + (moveCap.down.pageX - event.pageX);
+		moveTmr.curY = moveCap.scrollTop + (moveCap.down.pageY - event.pageY);
+		moveTmr.curT = now();
+		el.scrollTo(moveTmr.curX, moveTmr.curY);
 	});
+	function now() {
+		return Date.now ? Date.now() : (new Date()).getTime();
+	}
 })(elResultset);
 
 elCreateConnection.addEventListener('click', function (event) {
