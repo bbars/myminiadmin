@@ -2846,7 +2846,9 @@ editor.addEventListener('keydown', function (event) {
 	window.addEventListener('keydown', function (event) {
 		if (event.keyCode == 0x20) {
 			el.classList.add('move-capture');
-			event.preventDefault();
+			if (moveCap || event.target === el || event.target === window || event.target === document.body) {
+				event.preventDefault();
+			}
 		}
 	});
 	window.addEventListener('keyup', function (event) {
