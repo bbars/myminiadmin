@@ -2433,7 +2433,8 @@ body.modal-stack-show .modal-stack {
 	}
 	#elChartInfo > div {
 		position: relative;
-		min-height: 1em;
+		line-height: 1.4em;
+		height: 1.4em;
 	}
 	#elChartInfo > div:before {
 		content: attr(data-label);
@@ -2461,8 +2462,8 @@ body.modal-stack-show .modal-stack {
 		context.showChart = function (result) {
 			while (elChartXCol.children.length)
 				elChartXCol.removeChild(elChartXCol.children[0]);
-			while (elChartYCols.children.length)
-				elChartYCols.removeChild(elChartYCols.children[0]);
+			while (elChartYCols.childNodes.length)
+				elChartYCols.removeChild(elChartYCols.childNodes[0]);
 			var yChecked = false;
 			for (var i = 0; i < result.fields.length; i++) {
 				var type = result.fields[i].type;
@@ -2476,6 +2477,7 @@ body.modal-stack-show .modal-stack {
 				if (availYTypes.indexOf(type) > -1) {
 					var elLabel = document.createElement('label');
 					elChartYCols.appendChild(elLabel);
+					elChartYCols.appendChild(document.createTextNode(" "));
 					elLabel.textContent = elLabel.innerText = result.fields[i].name;
 					elLabel.className = 'm-r nowrap';
 					var elCheckbox = document.createElement('input');
@@ -3399,6 +3401,8 @@ function Tinychart(container) {
 	var styles = {
 		'svg': {
 			'cursor': 'crosshair',
+			'max-height': '100%',
+			'display': 'block',
 		},
 		'svg.move': {
 			'cursor': '-webkit-grabbing !important',
@@ -3467,9 +3471,11 @@ function Tinychart(container) {
 	var _xMax = -Infinity;
 	var _yMin = Infinity;
 	var _yMax = -Infinity;
+	var _yMinCrop = true;
 	var _xCount = 0;
 	var _yCount = 0;
 	var _forceType = '';
+	var _safeFrame = 2;
 	
 	this.scaleX = function (scaleX, originX) {
 		if (!isNaN(scaleX)) {
@@ -3478,7 +3484,7 @@ function Tinychart(container) {
 			
 			if (!isNaN(originX)) {
 				_originX = Math.max(0, Math.min(originX, 1));
-				this.svg.gChart.style.transformOrigin = (_originX * 100) + '% 50% 0px';
+				this.svg.gChart.style.transformOrigin = (_originX * 100) + 'px 50px 0px';
 			}
 		}
 		return _scaleX;
@@ -3590,7 +3596,7 @@ function Tinychart(container) {
 				gItem.appendChild(gItem.dots)
 				return gItem;
 			});
-			if (_yMin > 0)
+			if (_yMin > 0 && !_yMinCrop)
 				_yMin = 0;
 			
 			var dotTpl = document.createElementNS(NS.svg, 'circle');
@@ -3638,7 +3644,12 @@ function Tinychart(container) {
 		this.svg.appendChild(gChart);
 		var bbox = gChart.getBBox();
 		bbox = gChart.getBBox();
-		this.svg.setAttributeNS(null, 'viewBox', [bbox.x, bbox.y, bbox.width || 1, bbox.height || 1].join(' '));
+		this.svg.setAttributeNS(null, 'viewBox', [
+		    bbox.x - _safeFrame,
+		    bbox.y - _safeFrame,
+		    (bbox.width + 2*_safeFrame) || 1,
+		    (bbox.height + 2*_safeFrame) || 1,
+		].join(' '));
 		this.scaleX(1, 0.5);
 		setTimeout(function () {
 			_this.scaleX(1, 0.5);
@@ -3648,7 +3659,9 @@ function Tinychart(container) {
 	};
 	
 	this.getRealX = function (x) {
-		return x / _scaleX + _originX / _scaleX * (_scaleX-1);
+	    var sf = _safeFrame / 100;
+	    x = x / (1 - (2*sf)) - sf;
+	    return x / _scaleX + _originX / _scaleX * (_scaleX-1);
 	};
 	
 	var _hovered = null;
@@ -3659,8 +3672,9 @@ function Tinychart(container) {
 				_hovered[i].classList.remove('hover');
 		}
 		_hovered = null;
-		if (rx < 0 || rx > 1)
-			return false;
+		if (rx === undefined || rx === null || rx === false)
+		    return;
+		rx = Math.max(0, Math.min(+rx, 1));
 		var xIndex = -1;
 		if (_type == 'col') {
 			xIndex = Math.max(0, Math.min(_xCount * rx | 0, _xCount-1));
@@ -3750,14 +3764,19 @@ function Tinychart(container) {
 		var dx = (capture.cx - event.pageX) / (_this.svg.clientWidth * _scaleX - _this.svg.clientWidth);
 		_this.scaleX(_scaleX, Math.max(0, Math.min((capture.originX + dx), 1)));
 	}
-	function svgMousemoveLister(event) {
+	function svgMousemoveListener(event) {
 		_this.hoverValue(_this.getRealX(event.offsetX / _this.svg.clientWidth));
 	}
-	function svgMouseleaveLister(event) {
+	function svgMouseleaveListener(event) {
 		if (event.target == _this.svg)
 		_this.hoverValue(-1);
 	}
 	function svgMousewheelListener(event) {
+		if (event.shiftKey) {
+			var dx = event.deltaY / (_this.svg.clientWidth * _scaleX - _this.svg.clientWidth);
+			_this.scaleX(_scaleX, Math.max(0, Math.min(_originX + dx, 1)));
+			return;
+		}
 		var x = event.offsetX / _this.svg.clientWidth;
 		var rx = _this.getRealX(x);
 		_this.hoverValue(rx);
@@ -3777,8 +3796,8 @@ function Tinychart(container) {
 	this.svg.addEventListener('mousedown', svgMousedownListener, {passive: true, capture: true});
 	document.addEventListener('mouseup', documentMouseupListener, {passive: true, capture: true});
 	document.addEventListener('mousemove', documentMousemoveListener, {passive: true, capture: true});
-	this.svg.addEventListener('mousemove', svgMousemoveLister, {passive: true, capture: true});
-	this.svg.addEventListener('mouseleave', svgMouseleaveLister, {passive: true, capture: true});
+	this.svg.addEventListener('mousemove', svgMousemoveListener, {passive: true, capture: true});
+	this.svg.addEventListener('mouseleave', svgMouseleaveListener, {passive: true, capture: true});
 	this.svg.addEventListener('mousewheel', svgMousewheelListener, {passive: true, capture: true});
 	
 	this.remove = function () {
@@ -3788,8 +3807,8 @@ function Tinychart(container) {
 		this.svg.removeEventListener('mousedown', svgMousedownListener, true);
 		document.removeEventListener('mouseup', documentMouseupListener, true);
 		document.removeEventListener('mousemove', documentMousemoveListener, true);
-		this.svg.removeEventListener('mousemove', svgMousemoveLister, true);
-		this.svg.removeEventListener('mouseleave', svgMouseleaveLister, true);
+		this.svg.removeEventListener('mousemove', svgMousemoveListener, true);
+		this.svg.removeEventListener('mouseleave', svgMouseleaveListener, true);
 		this.svg.removeEventListener('mousewheel', svgMousewheelListener, true);
 	};
 }
