@@ -1561,43 +1561,32 @@ body.dragover:after {
 		user-select: initial;
 	}
 	
-	#elAside.showing:before {
+	#elAside:after {
 		content: '';
-		background: rgba(0,0,0,0.9);
-		opacity: 0.5;
+		position: absolute;
+		left: 100%;
+		top: initial;
+		bottom: 1em;
+		width: 1.5em;
+		height: 4em;
+		background: rgba(0,0,0,0.1) url('data:image/svg+xml;utf8,<svg stroke="black" stroke-width="3" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="80"><path d="M 5 10 L 15 40 L 5 70" /></svg>') center center no-repeat;
+		background-size: contain;
+		border-radius: 0 0.3em 0.3em 0;
+		opacity: 1;
+		transition: background 0.2s ease, opacity 1s ease;
+	}
+	#elAside.showing:after {
+		content: '';
 		position: absolute;
 		left: 100%;
 		top: 0;
+		bottom: initial;
 		width: 100vw;
 		height: 100%;
-	}
-	
-	#elAside:after {
-		content: '\232a';
-		position: absolute;
-		left: 100%;
-		bottom: 1em;
-		background: rgba(0,0,0,0.1);
-		color: #000;
-		font-size: 3em;
-		text-align: center;
-		width: 0.5em;
-		height:1.5em;
-		line-height: 1.25em;
-		border-radius: 0 0.1em 0.1em 0;
-	}
-	#elAside.showing:after {
-		content: '\2329';
-		position: absolute;
-		background: transparent;
-		left: 100%;
-		bottom: 50%;
-		color: #fff;
-		font-size: 3em;
-		width: 1em;
-		height: 1em;
-		line-height: 0em;
-		text-align: center;
+		background: rgba(0,0,0,0.9) url('data:image/svg+xml;utf8,<svg stroke="white" stroke-width="3" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="80"><path d="M 15 10 L 5 40 L 15 70" /></svg>') 1em center no-repeat;
+		background-size: 1em auto;
+		border-radius: 0;
+		opacity: 0.5;
 	}
 }
 
@@ -1628,7 +1617,7 @@ textarea {
 button {
 	background: #d9ccaa;
 	border: rgba(0,0,0, 0.1) 1px solid;
-	text-shadow: #fff 0px 1px;
+	text-shadow: rgba(255,255,255, 0.6) 0px 1px;
 	padding: 0.5em 0.75em;
 	min-width: 2em;
 	text-align: center;
@@ -1723,23 +1712,41 @@ textarea:focus {
 	z-index: 10;
 }
 
+#elQueryContainer {
+	width: 100%;
+	height: 15%;
+	min-height: 3em;
+	position: relative;
+}
+
 #elQuery {
 	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 	display: block;
 	width: 100%;
-	height: 15%;
+	height: 100%;
 	/*resize: vertical;*/
 	/*background: #6e6a5e;*/
 	/*color: #fff;*/
 	font-size: inherit;
 	border: none;
 	outline: none !important;
-	padding: 1em;
+	padding: 0;
 	border-radius: 0;
 }
 #elQuery:disabled {
 	opacity: 0.75;
 }
+
+#elQueryExecButton {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	z-index: 1;
+	border-radius: 0.5em 0 0 0;
+	border: none;
+	box-shadow: #141414 -0.1em -0.1em 0.1em 0.1em, rgba(0,0,0, 0.1) -0.1em -0.1em 1em inset;
+}
+
 #elResultset {
 	overflow: auto;
 	flex: 1 1 50%;
@@ -2304,7 +2311,7 @@ body.modal-stack-show .modal-stack {
 			<div>
 				<div class="control-row m-b">
 					<select id="elConnections" placeholder="Connections"></select>
-					<button id="elCreateConnection">+</button>
+					<button id="elCreateConnection">&#xFF0B;</button>
 				</div>
 				<div class="control-row">
 					<select id="elBases" placeholder="Bases"></select>
@@ -2317,7 +2324,10 @@ body.modal-stack-show .modal-stack {
 			</div>
 		</aside>
 		<main id="elMain" class="flex-col flex-1-auto">
-			<div id="elQuery"></div>
+			<div id="elQueryContainer">
+				<div id="elQuery"></div>
+				<button id="elQueryExecButton">Execute</button>
+			</div>
 			<!-- <textarea></textarea> -->
 			<div class="splitter"></div>
 			<section id="elResultset"></section>
@@ -3175,6 +3185,9 @@ editor.addEventListener('keyup', function (event) {
 		executeQuery(editor.getValue());
 	}
 });
+elQueryExecButton.addEventListener('click', function () {
+	executeQuery(editor.getValue());
+});
 editor.addEventListener('change', function (event) {
 	config.query = editor.getValue();
 });
@@ -3209,7 +3222,7 @@ function onSplitterDown(event) {
 }
 function onSplitterUp(event) {
 	splitterCaptured = false;
-	config.splitter_elMain = parseFloat(elQuery.style.flexBasis);
+	config.splitter_elMain = parseFloat(elQueryContainer.style.flexBasis);
 }
 function onSplitterMove(event) {
 	if (splitterCaptured === false)
@@ -3218,7 +3231,7 @@ function onSplitterMove(event) {
 	if (isNaN(clientY))
 		return;
 	var h = 100 * clientY / elMain.clientHeight;
-	elQuery.style.flexBasis = h + '%';
+	elQueryContainer.style.flexBasis = h + '%';
 	elResultset.style.flexBasis = (100 - h) + '%';
 	event.preventDefault();
 	event.stopPropagation();
@@ -3238,7 +3251,7 @@ elMain.addEventListener('touchend', onSplitterUp);
 	var h = parseFloat(config.splitter_elMain);
 	if (isNaN(h))
 		return false;
-	elQuery.style.flexBasis = h + '%';
+	elQueryContainer.style.flexBasis = h + '%';
 	elResultset.style.flexBasis = (100 - h) + '%';
 	window.dispatchEvent(new Event('resize'));
 })();
