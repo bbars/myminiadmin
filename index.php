@@ -1733,8 +1733,20 @@ textarea:focus {
 	padding: 0;
 	border-radius: 0;
 }
-#elQuery:disabled {
+#elQuery:disabled,
+#elQuery > :disabled {
 	opacity: 0.75;
+}
+
+#elQuery > textarea {
+	border: none;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	resize: none;
+	outline: none !important;
+	background: #141414;
+	color: #fff;
 }
 
 #elQueryExecButton {
@@ -2919,20 +2931,55 @@ body.modal-stack-show .modal-stack {
 <script src="?part=ace-sql-snippets.js"></script>
 <script>
 
-var editor = {
-	ace: ace.edit(elQuery),
-	getValue: function () {
+var editor = ('ontouchstart' in document.body) ? new PlainEditorFacade(elQuery) : new AceEditorFacade(elQuery);
+
+function PlainEditorFacade(containerElement) {
+	this.textarea = document.createElement('textarea');
+	containerElement.appendChild(this.textarea)
+	
+	this.getValue = function () {
+		return this.textarea.value;
+	};
+	this.setValue = function (value) {
+		this.textarea.value = value || '';
+		return this;
+	};
+	this.focus = function () {
+		this.textarea.focus();
+		return this;
+	};
+	this.addEventListener = function (event, listener) {
+		this.textarea.addEventListener(event, listener);
+		return this;
+	};
+	this.setDisabled = function (disabled) {
+		this.textarea.enabled = !disabled;
+		return this;
+	};
+	this.clearCompletions = function (tag) {};
+	this.addCompletion = function (tag, word) {};
+	this.clearSnippets = function () {};
+	this.addSnippet = function (name, body) {};
+	this.insertText = function (text) {
+		this.textarea.execCommand('insertstring', text);
+	};
+}
+
+function AceEditorFacade(containerElement) {
+	this.ace = ace.edit(containerElement);
+	
+	this.getValue = function () {
 		return this.ace.getValue();
-	},
-	setValue: function (value) {
+	};
+	this.setValue = function (value) {
 		this.ace.setValue(value || '');
 		return this;
-	},
-	focus: function () {
+	};
+	this.focus = function () {
 		this.ace.focus();
 		return this;
-	},
-	addEventListener: function (event, listener) {
+	};
+	this.addEventListener = function (event, listener) {
 		if (event == 'change') {
 			this.ace.on(event, listener);
 		}
@@ -2940,12 +2987,12 @@ var editor = {
 			this.ace.textInput.getElement().addEventListener(event, listener);
 		}
 		return this;
-	},
-	setDisabled: function (disabled) {
+	};
+	this.setDisabled = function (disabled) {
 		this.ace.setReadOnly(disabled);
 		return this;
-	},
-	clearCompletions: function (tag) {
+	};
+	this.clearCompletions = function (tag) {
 		if (!tag) {
 			this._completers.map(function (completer) {
 				completer.clear();
@@ -2954,13 +3001,13 @@ var editor = {
 		else if (this._completers[tag]) {
 			this._completers[tag].clear();
 		}
-	},
-	addCompletion: function (tag, word) {
+	};
+	this.addCompletion = function (tag, word) {
 		if (this._completers[tag] && this._completers[tag].indexOf(word) < 0) {
 			this._completers[tag].push(word);
 		}
-	},
-	clearSnippets: function () {
+	};
+	this.clearSnippets = function () {
 		var sm = ace.require('ace/snippets').snippetManager;
 		for (var i = sm.snippetMap.sql.length - 1; i > -1; i--) {
 			var snippet = sm.snippetMap.sql[i];
@@ -2969,36 +3016,37 @@ var editor = {
 				sm.snippetMap.sql.splice(i, 1);
 			}
 		}
-	},
-	addSnippet: function (name, body) {
+	};
+	this.addSnippet = function (name, body) {
 		var sm = ace.require('ace/snippets').snippetManager;
 		var snippet = sm.parseSnippetFile('snippet ' + name + "\n\t" + body)[0];
 		snippet.custom = true;
 		sm.snippetMap.sql.push(snippet);
 		sm.snippetNameMap.sql[snippet.name] = snippet;
-	},
-	insertText: function (text) {
+	};
+	this.insertText = function (text) {
 		this.ace.execCommand('insertstring', text);
-	},
-	_completers: {
+	};
+	this._completers = {
 		base: new SQLNamesCompleter('base'),
 		table: new SQLNamesCompleter('table'),
 		column: new SQLNamesCompleter('column'),
-	},
-};
-editor.ace.$blockScrolling = Infinity;
-editor.ace.setTheme('ace/theme/twilight');
-editor.ace.session.setMode('ace/mode/sql');
-editor.ace.session.setUseWrapMode(true);
-editor.ace.setOptions({
-	enableBasicAutocompletion: true,
-	enableSnippets: config.enableSnippets,
-	enableLiveAutocompletion: config.enableLiveAutocompletion,
-});
-editor.ace.completers.push(editor._completers.base);
-editor.ace.completers.push(editor._completers.table);
-editor.ace.completers.push(editor._completers.column);
-editor.ace.commands.bindKey({win: "F8", mac: "Command-D"}, "removeline");
+	};
+	
+	this.ace.$blockScrolling = Infinity;
+	this.ace.setTheme('ace/theme/twilight');
+	this.ace.session.setMode('ace/mode/sql');
+	this.ace.session.setUseWrapMode(true);
+	this.ace.setOptions({
+		enableBasicAutocompletion: true,
+		enableSnippets: config.enableSnippets,
+		enableLiveAutocompletion: config.enableLiveAutocompletion,
+	});
+	this.ace.completers.push(this._completers.base);
+	this.ace.completers.push(this._completers.table);
+	this.ace.completers.push(this._completers.column);
+	this.ace.commands.bindKey({win: "F8", mac: "Command-D"}, "removeline");
+}
 
 elResultset.EM_1 = (function () {
 	var div = document.createElement('div');
