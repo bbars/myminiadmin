@@ -2071,7 +2071,7 @@ body.modal-stack-show .modal-stack {
 	text-overflow: ellipsis;
 	margin-top: 0;
 }
-#elBlobValueEncoded {
+#elBlobValueView {
 	display: block;
 	background: #eee;
 	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
@@ -2083,7 +2083,7 @@ body.modal-stack-show .modal-stack {
 	white-space: pre-wrap;
 	word-break: break-word;
 }
-#elBlobValueEncoded > * {
+#elBlobValueView > * {
 	display: inline-block;
 	margin-right: 0.5em;
 }
@@ -2138,6 +2138,161 @@ body.modal-stack-show .modal-stack {
 	content: '\2192';
 	display: inline-block;
 	transform: rotate(-42deg);
+}
+
+/* createDirElement */
+
+.cde-dir-value {
+    font-family: 'Consolas', monospace;
+    display: inline-block;
+    max-width: 100%;
+}
+.cde-properties > .cde-dir-value {
+    display: block;
+}
+.cde-property,
+.cde-value {
+    position: relative;
+    display: inline-block;
+    vertical-align: top;
+}
+
+.cde-property {
+    color: #a2a;
+    margin-right: -0.5em;
+}
+.cde-property.cde-property-hidden {
+    opacity: 0.5;
+}
+.cde-property.cde-property-inherited:before {
+    content: '\1f851';
+    display: inline-block;
+    color: #99c;
+    width: 0.75em;
+    margin-right: 0.25em;
+    margin-left: -1em;
+    line-height: 0;
+}
+.cde-property + .cde-value {
+    left: 1em;
+    margin-right: 1em;
+}
+.cde-value[data-type="string"] {
+    color: #d32;
+    white-space: pre-wrap;
+}
+.cde-value[data-type="number"] {
+    color: #42d;
+}
+.cde-value[data-type="string"]:before,
+.cde-value[data-type="string"]:after {
+    content: '"';
+    color: #000;
+}
+.cde-value[data-type="string"] > .cde-value-ellipsis {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    line-height: 1em;
+    overflow: hidden;
+    color: transparent;
+    vertical-align: middle;
+    margin: -1em 0.5em;
+    border-radius: 3px;
+}
+.cde-value[data-type="string"] > .cde-value-ellipsis:before {
+    content: '\2026';
+    color: #fee;
+    user-select: none;
+    background: #d00;
+    background: #d00e;
+    border-radius: 2px;
+    text-align: center;
+    width: 100%;
+    display: inline-block;
+}
+.cde-value[data-type="boolean"],
+.cde-value[data-type="null"] {
+    color: #a2a;
+}
+.cde-value[data-type="undefined"] {
+    color: #888;
+}
+.cde-value[data-type="object"] {
+    color: #222;
+    font-style: italic;
+    cursor: pointer;
+}
+.cde-value[data-type="object"]:hover {
+    text-decoration: underline;
+}
+.cde-value[data-type="function"] {
+    color: #888;
+    font-style: italic;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cde-properties .cde-value[data-type="function"] {
+    max-width: 50%;
+}
+.cde-value[data-type="object"]:before {
+    content: '\25b6';
+    font-style: initial;
+    text-indent: 0;
+    font-size: 0.75em;
+    width: 1em;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1em;
+    height: 1em;
+    text-align: left;
+    margin-right: 0.15em;
+    color: #444;
+    transition: transform 100ms ease;
+}
+.cde-properties-expanded > .cde-value[data-type="object"]:before {
+    transform: rotate(90deg);
+}
+.cde-dir-value > .cde-properties {
+    margin-left: 2em;
+}
+.cde-dir-value > .cde-properties:empty:before {
+    content: 'empty';
+    color: #888;
+}
+.cde-dir-value > .cde-properties:empty:before {
+    content: 'empty';
+    color: #888;
+}
+
+.cde-properties > .cde-toggle-show-hidden {
+    display: inline-block;
+    background: rgba(128,128,128,0.5);
+    padding: 0.25em;
+    line-height: 0.5em;
+    border-radius: 0.1em;
+    cursor: pointer;
+}
+.cde-properties > .cde-toggle-show-hidden:before {
+    content: '\2219\2219\2219';
+    font-weight: bold;
+}
+.cde-properties > .cde-dir-value.cde-dir-value-hidden {
+    display: none;
+}
+.cde-properties.cde-properties-show-hidden > .cde-dir-value.cde-dir-value-hidden {
+    display: block;
+}
+.cde-properties.cde-properties-show-hidden > .cde-toggle-show-hidden {
+    display: none;
+}
+
+/* do not show hidden properties at all: */
+.cde-properties > .cde-toggle-show-hidden,
+.cde-properties.cde-properties-show-hidden > .cde-dir-value-hidden {
+	display: none !important;
 }
 
 </style>
@@ -2253,21 +2408,22 @@ body.modal-stack-show .modal-stack {
 	<span class="modal-close"></span>
 	<h2 id="elModalBlobValueTitle"></h2>
 	<div class="m-b">
-		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="256" checked>Raw</label>
-		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="16">Hex</label>
-		<label class="m-r"><input type="radio" name="blob-value-encode-base" value="2">Binary</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,256" checked>Raw</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,16">Hex</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,2">Binary</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="json">JSON</label>
 	</div>
-	<div id="elBlobValueEncoded" contenteditable="true"></div>
+	<div id="elBlobValueView"></div>
+	<script src="?part=create-dir-element.js"></script>
 	<script>
 	
-	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded) {
+	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueView) {
 		var bigValuesRe = /(BLOB|STRING|GEOMETRY)$/i;
 		var intValuesRe = /(CHAR|INT|LONG)$/i;
 		
 		function encode(value, type, base) {
-			base = base || elModalBlobValue.querySelector('[name="blob-value-encode-base"]:checked').value;
 			if (base == 256) {
-				elBlobValueEncoded.textContent = value;
+				elBlobValueView.textContent = value;
 				return;
 			}
 			var chunkSize = Math.ceil(8 / Math.log2(base));
@@ -2285,25 +2441,62 @@ body.modal-stack-show .modal-stack {
 			else {
 				return;
 			}
-			elBlobValueEncoded.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
+			elBlobValueView.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
+		}
+		
+		function showValue(value, type) {
+			var elDefMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="data,256"]');
+			var elJsonMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="json"]');
+			var mode = elModalBlobValue.querySelector('[name="blob-value-display-mode"]:checked').value;
+			var looksLikeJson = /^\s*(\[|\{|-?\d+|")/.test(value);
+			if (!looksLikeJson) {
+				elJsonMode.setAttribute('disabled', 'disabled');
+			}
+			else {
+				elJsonMode.removeAttribute('disabled');
+			}
+			if (mode === 'json') {
+				if (!looksLikeJson) {
+					elJsonMode.checked = false;
+					elDefMode.checked = true;
+					return showValue(value, type);
+				}
+				elBlobValueView.removeAttribute('contenteditable');
+				elBlobValueView.textContent = '';
+				var o = null;
+				try {
+					o = JSON.parse(value);
+				}
+				catch (e) {
+					o = e;
+				}
+				elBlobValueView.appendChild(createDirElement(o));
+			}
+			else {
+				var base = +mode.split(',')[1];
+				elBlobValueView.setAttribute('contenteditable', 'true');
+				encode(value, type, base);
+			}
+			
 		}
 		
 		elResultset.addEventListener('click', function (event) {
-			if (!event.ctrlKey || !bigValuesRe.test(event.target.getAttribute('data-type')))
+			if (!event.ctrlKey || !bigValuesRe.test(event.target.dataset.type))
 				return;
 			var td = event.target;
+			elModalBlobValue.__td = td;
 			
-			elModalBlobValue.addEventListener('change', function (event) {
-				encode(td.__value, td.dataset.type);
-			});
-			
-			elModalBlobValueTitle.textContent = td.getAttribute('data-name') + ' (' + td.getAttribute('data-type') + ')';
-			encode(td.__value, td.dataset.type);
+			elModalBlobValueTitle.textContent = td.dataset.name + ' (' + td.dataset.type + ')';
+			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type);
 			
 			Modal.show(elModalBlobValue);
 		});
 		
-		elBlobValueEncoded.addEventListener('keydown', function (event) {
+		elModalBlobValue.addEventListener('change', function (event) {
+			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type);
+		});
+		
+		elBlobValueView.addEventListener('keydown', function (event) {
 			if (event.ctrlKey) {
 				if (event.keyCode === 86 || event.keyCode === 88) { // ctrl+x, ctrl+v
 					event.preventDefault();
@@ -2317,7 +2510,7 @@ body.modal-stack-show .modal-stack {
 			event.preventDefault();
 			return false;
 		});
-	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueEncoded);
+	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueView);
 	
 	</script>
 </div>
@@ -3831,3 +4024,122 @@ Content-Disposition: inline; filename='loader.gif'
 X-Execute: On
 
 <?= base64_decode('R0lGODlhKwALAPEAAJmZmf///8rKyv///yH/C05FVFNDQVBFMi4wAwEAAAAh/hpDcmVhdGVkIHdpdGggYWpheGxvYWQuaW5mbwAh+QQJCgAAACwAAAAAKwALAAACMoSOCMuW2diD88UKG95W88uF4DaGWFmhZid93pq+pwxnLUnXh8ou+sSz+T64oCAyTBUAACH5BAkKAAAALAAAAAArAAsAAAI9xI4IyyAPYWOxmoTHrHzzmGHe94xkmJifyqFKQ0pwLLgHa82xrekkDrIBZRQab1jyfY7KTtPimixiUsevAAAh+QQJCgAAACwAAAAAKwALAAACPYSOCMswD2FjqZpqW9xv4g8KE7d54XmMpNSgqLoOpgvC60xjNonnyc7p+VKamKw1zDCMR8rp8pksYlKorgAAIfkECQoAAAAsAAAAACsACwAAAkCEjgjLltnYmJS6Bxt+sfq5ZUyoNJ9HHlEqdCfFrqn7DrE2m7Wdj/2y45FkQ13t5itKdshFExC8YCLOEBX6AhQAADsAAAAAAAAAAAA=') ?>
+
+
+-- ################################################################################################
+
+Name: create-dir-element.js
+Content-Type: application/javascript; charset="utf-8"
+
+// <script>
+var createDirElement = (function () {
+	function createDirElement(value, name, descriptor) {
+		var valueType = value === null ? 'null' : typeof value;
+		var valueClass;
+		try {
+			valueClass = valueType == 'object' ? value.constructor.name : '';
+		}
+		catch (e) {
+			valueClass = '?';
+		}
+		var res = document.createElement('div');
+		res.className = 'cde-dir-value';
+		res.dirElementValue = value;
+		if (name) {
+			var elName = document.createElement('span');
+			elName.className = 'cde-property';
+			elName.textContent = name + ': ';
+			if (descriptor) {
+				if (!descriptor.enumerable) {
+					elName.className += ' cde-property-hidden';
+				}
+				if (!descriptor.writable)
+					elName.className += ' cde-property-readonly';
+				if (descriptor.inherited) {
+					elName.className += ' cde-property-inherited';
+					res.className += ' cde-dir-value-hidden';
+				}
+			}
+			res.appendChild(elName);
+			res.setAttribute('data-name', name);
+		}
+		var elValue = document.createElement('span');
+		elValue.className = 'cde-value';
+		elValue.setAttribute('data-type', valueType);
+		if (value === null)
+			value = 'null';
+		else if (value === undefined)
+			value = 'undefined';
+		if (valueType == 'string' && value.length > 500) {
+			value = [
+				value.slice(0, 200),
+				value.slice(200, value.length - 200),
+				value.slice(value.length - 200)
+			];
+			for (var i = 0; i < value.length; i++) {
+				var span = document.createElement('span');
+				span.textContent = value[i];
+				if (i == 1)
+					span.className = 'cde-value-ellipsis';
+				elValue.appendChild(span);
+			}
+		}
+		else {
+			elValue.textContent = valueType == 'object' ? valueClass : value;
+			if (value instanceof Array) {
+				elValue.textContent += '(' + value.length + ')';
+				
+			}
+		}
+		res.appendChild(elValue);
+		
+		if (valueType == 'object') {
+			elValue.addEventListener('click', createDirElement.objectClickHandler.bind(res));
+		}
+		
+		return res;
+	}
+	createDirElement.objectClickHandler = function (event) {
+		event.preventDefault();
+		var properties = this.querySelector(':scope > .cde-properties');
+		if (properties) {
+			this.classList.remove('cde-properties-expanded');
+			properties.remove();
+		}
+		else {
+			this.classList.add('cde-properties-expanded');
+			properties = document.createElement('div');
+			properties.className = 'cde-properties';
+			
+			var o;
+			var hidden = false;
+			var nonHidden = false;
+			for (var o = this.dirElementValue; o !== null; o = Object.getPrototypeOf(o)) {
+				var descriptors = Object.getOwnPropertyDescriptors(o);
+				for (var k in descriptors) {
+					var descriptor = descriptors[k];
+					nonHidden = nonHidden || !descriptor.enumerable;
+					hidden = hidden || descriptor.enumerable;
+					descriptor.inherited = o != this.dirElementValue;
+					properties.appendChild(createDirElement(descriptor.value, k, descriptor));
+				}
+			}
+			
+			this.appendChild(properties);
+			if (hidden && nonHidden) {
+				var elMore = document.createElement('span');
+				elMore.className = 'cde-toggle-show-hidden';
+				elMore.addEventListener('click', createDirElement.showHiddenClickHandler.bind(elMore));
+				properties.appendChild(elMore);
+			}
+			else if (!hidden && nonHidden) {
+				properties.classList.add('cde-properties-show-hidden');
+			}
+		}
+	};
+	createDirElement.showHiddenClickHandler = function (event) {
+		this.parentElement.classList.add('cde-properties-show-hidden');
+	};
+	return createDirElement;
+})();
+// </script>
