@@ -1066,7 +1066,7 @@ function executeQuery(sql, safeRows) {
 		})
 		.finally(function () {
 			editor.setDisabled(false);
-			editor.focus();
+			('ontouchstart' in document.body ? elResultset : editor).focus();
 			elMain.classList.remove('loading');
 		})
 	;
@@ -1567,10 +1567,10 @@ body.dragover:after {
 		left: 100%;
 		top: initial;
 		bottom: 1em;
-		width: 1.5em;
-		height: 4em;
-		background: rgba(0,0,0,0.1) url('data:image/svg+xml;utf8,<svg stroke="black" stroke-width="3" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="80"><path d="M 5 10 L 15 40 L 5 70" /></svg>') center center no-repeat;
-		background-size: contain;
+		width: 2em;
+		height: 5em;
+		background: rgba(192,192,192, 0.5) url('data:image/svg+xml;utf8,<svg stroke="black" stroke-width="3" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="80"><path d="M 5 10 L 15 40 L 5 70" /></svg>') center center no-repeat;
+		background-size: 1em auto;
 		border-radius: 0 0.3em 0.3em 0;
 		opacity: 1;
 		transition: background 0.2s ease, opacity 1s ease;
@@ -1859,11 +1859,12 @@ table.result {
 }
 table.result > thead > tr > * {
 	position: sticky;
-	top: 0px;
+	top: -1px;
 	background: #ddd;
 	border: #ddd 1px solid;
-	border-width: 2px 1px;
-	box-shadow: #ddd 0 -2px 0, #ddd 0 2px 0;
+	border-width: 0px 1px;
+	border-color: transparent #fff;
+	box-shadow: #ddd 0 -2px 0, #ddd 0 -3px 0 inset;
 	background-clip: border-box;
 	margin-bottom: 1.6em;
 }
@@ -3203,7 +3204,7 @@ elTables.addEventListener('click', function (event) {
 	var a = event.target;
 	var table = a.parentElement.dataset.table;
 	if (table) {
-		editor.focus();
+		('ontouchstart' in document.body ? elResultset : editor).focus();
 		sql = '';
 		if (event.shiftKey) {
 			sql = (event.altKey ? 'SHOW CREATE TABLE' : 'DESCRIBE') + ' `' + backtickEscape(table) + '`;';
@@ -3397,14 +3398,23 @@ document.addEventListener('drop', function (event) {
 (function () {
 	var capture = null;
 	elAside.addEventListener('touchstart', function (event) {
+		var touch = event.touches[0];
+		if (touch.clientX < elAside.clientWidth + elAside.offsetLeft) {
+			return;
+		}
 		capture = {
-			touch: event.touches[0],
+			touch: touch,
 			left: elAside.offsetLeft / window.innerWidth,
 			showing: elAside.classList.contains('showing'),
+			moved: false,
 		};
 		elAside.style.transition = '';
 	}, { passive: true });
 	elAside.addEventListener('touchmove', function (event) {
+		if (!capture) {
+			return;
+		}
+		capture.moved = true;
 		var touch = event.touches[0];
 		var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
 		if (Math.abs(x) > 0) {
@@ -3414,16 +3424,24 @@ document.addEventListener('drop', function (event) {
 		}
 	}, { passive: true });
 	elAside.addEventListener('touchend', function (event) {
-		var touch = event.changedTouches[0];
-		var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
-		elAside.style.transition = 'left 0.2s ease';
-		elAside.style.left = null;
-		var show = capture.showing;
-		if (Math.abs(x) > 0.3)
-			show = x < 0;
-		elAside.classList.toggle('showing', show);
+		if (!capture) {
+			return;
+		}
+		if (!capture.moved) {
+			toggleAside(!capture.showing);
+		}
+		else {
+			var touch = event.changedTouches[0];
+			var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
+			toggleAside(Math.abs(x) > 0.3 ? x < 0 : capture.showing);
+		}
 		capture = null;
 	});
+	function toggleAside(show) {
+		elAside.style.transition = 'left 0.2s ease';
+		elAside.style.left = null;
+		elAside.classList.toggle('showing', show);
+	}
 })();
 
 </script>
