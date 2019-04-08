@@ -1031,13 +1031,13 @@ function executeQuery(sql, safeRows) {
 						
 						var chartBtn = document.createElement('button');
 						chartBtn.innerHTML = '&#x1f4c8;';
-						chartBtn.className = 'btn-chart btn-flat m-l';
+						chartBtn.className = 'btn-chart btn-flat';
 						resultCtl.appendChild(chartBtn);
 						chartBtn.__table = table;
 						
 						var exportBtn = document.createElement('button');
 						exportBtn.innerHTML = '&#x1f4be;';
-						exportBtn.className = 'btn-export btn-flat m-l';
+						exportBtn.className = 'btn-export btn-flat';
 						resultCtl.appendChild(exportBtn);
 						exportBtn.__table = table;
 					}
@@ -1724,9 +1724,8 @@ textarea:focus {
 	display: block;
 	width: 100%;
 	height: 100%;
-	/*resize: vertical;*/
-	/*background: #6e6a5e;*/
-	/*color: #fff;*/
+	background: #141414;
+	color: #fff;
 	font-size: inherit;
 	border: none;
 	outline: none !important;
@@ -1745,8 +1744,9 @@ textarea:focus {
 	box-sizing: border-box;
 	resize: none;
 	outline: none !important;
-	background: #141414;
-	color: #fff;
+	background: inherit;
+	color: inherit;
+	border-radius: 0;
 }
 
 #elQueryExecButton {
@@ -1794,9 +1794,18 @@ textarea:focus {
 	display: inline-flex;
 	flex-wrap: wrap;
 	flex-direction: column;
-	margin-right: 1em;
+	vertical-align: top;
+	margin: 1.2em 0.75em 0;
 	position: sticky;
-	top: 1em;
+	top: 0.75em;
+}
+.result-ctl > * {
+	border-radius: 0;
+}
+.result-ctl > :first-child { border-radius:     2px 2px 0 0; }
+.result-ctl > :last-child  { border-radius: 0 0 2px 2px; }
+.result-ctl > * + * {
+	margin-top: 1px;
 }
 
 .m-t { margin-top:    0.5em; }
