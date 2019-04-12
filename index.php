@@ -1802,8 +1802,14 @@ textarea:focus {
 .result-ctl > * {
 	border-radius: 0;
 }
-.result-ctl > :first-child { border-radius:     2px 2px 0 0; }
-.result-ctl > :last-child  { border-radius: 0 0 2px 2px; }
+.result-ctl > :first-child {
+	border-top-left-radius: 2px;
+	border-top-right-radius: 2px;
+}
+.result-ctl > :last-child  {
+	border-bottom-left-radius: 2px;
+	border-bottom-right-radius: 2px;
+}
 .result-ctl > * + * {
 	margin-top: 1px;
 }
@@ -1956,7 +1962,7 @@ table.result tbody tr > .type-STRING {
 }
 table.result tbody tr > .type-GEOMETRY,
 table.result tbody tr > .type-JSON {
-	color: #417;
+	color: #471;
 }
 
 table.result * tr.safe-cut > td,
@@ -4125,14 +4131,21 @@ Content-Type: application/javascript; charset="utf-8"
 // <script>
 var createDirElement = (function () {
 	var TPL = {};
-	
+	TPL.wrapper = document.createElement('div');
+	TPL.wrapper.className = 'cde-dir-value';
+	TPL.propName = document.createElement('span');
+	TPL.propName.className = 'cde-property';
+	TPL.propValue = document.createElement('span');
+	TPL.propValue.className = 'cde-value';
 	TPL.valueEllipsis = document.createElement('span');
 	TPL.valueEllipsis.className = 'cde-value-ellipsis';
-	
 	TPL.valueQuot = document.createElement('span');
 	TPL.valueQuot.className = 'cde-value-quot';
 	TPL.valueQuot.textContent = '"';
-	
+	TPL.properties = document.createElement('div');
+	TPL.properties.className = 'cde-properties';
+	TPL.btnMore = document.createElement('span');
+	TPL.btnMore.className = 'cde-toggle-show-hidden';
 	function createDirElement(value, name, descriptor, expandDepth) {
 		var valueType = value === null ? 'null' : typeof value;
 		var valueClass;
@@ -4142,12 +4155,10 @@ var createDirElement = (function () {
 		catch (e) {
 			valueClass = '?';
 		}
-		var res = document.createElement('div');
-		res.className = 'cde-dir-value';
+		var res = TPL.wrapper.cloneNode();
 		res.dirElementValue = value;
 		if (name) {
-			var elName = document.createElement('span');
-			elName.className = 'cde-property';
+			var elName = TPL.propName.cloneNode();
 			elName.textContent = name + ': ';
 			if (descriptor) {
 				if (!descriptor.enumerable) {
@@ -4163,8 +4174,7 @@ var createDirElement = (function () {
 			res.appendChild(elName);
 			res.setAttribute('data-name', name);
 		}
-		var elValue = document.createElement('span');
-		elValue.className = 'cde-value';
+		var elValue = TPL.propValue.cloneNode();
 		elValue.setAttribute('data-type', valueType);
 		if (value === null)
 			value = 'null';
@@ -4218,8 +4228,7 @@ var createDirElement = (function () {
 		if (!el.dirElementValue || typeof el.dirElementValue !== 'object' || el.classList.contains('cde-properties-expanded'))
 			return false;
 		el.classList.add('cde-properties-expanded');
-		var properties = document.createElement('div');
-		properties.className = 'cde-properties';
+		var properties = TPL.properties.cloneNode(true);
 		
 		var o;
 		var hidden = false;
@@ -4238,8 +4247,7 @@ var createDirElement = (function () {
 		el.appendChild(properties);
 		
 		if (hidden && nonHidden) {
-			var elMore = document.createElement('span');
-			elMore.className = 'cde-toggle-show-hidden';
+			var elMore = TPL.btnMore.cloneNode(true);
 			elMore.addEventListener('click', createDirElement.showHiddenClickHandler.bind(elMore));
 			properties.appendChild(elMore);
 		}
