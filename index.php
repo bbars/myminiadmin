@@ -1954,7 +1954,8 @@ table.result tbody tr > .type-VAR_STRING,
 table.result tbody tr > .type-STRING {
 	color: #222;
 }
-table.result tbody tr > .type-GEOMETRY {
+table.result tbody tr > .type-GEOMETRY,
+table.result tbody tr > .type-JSON {
 	color: #417;
 }
 
@@ -2172,9 +2173,10 @@ body.modal-stack-show .modal-stack {
 /* createDirElement */
 
 .cde-dir-value {
-    font-family: 'Consolas', monospace;
+    font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
     display: inline-block;
     max-width: 100%;
+    white-space: normal;
 }
 .cde-properties > .cde-dir-value {
     display: block;
@@ -2203,8 +2205,7 @@ body.modal-stack-show .modal-stack {
     line-height: 0;
 }
 .cde-property + .cde-value {
-    left: 1em;
-    margin-right: 1em;
+    margin-left: 1em;
 }
 .cde-value[data-type="string"] {
     color: #d32;
@@ -2213,24 +2214,23 @@ body.modal-stack-show .modal-stack {
 .cde-value[data-type="number"] {
     color: #42d;
 }
-.cde-value[data-type="string"]:before,
-.cde-value[data-type="string"]:after {
+.cde-value[data-type="string"] > .cde-value-quot {
     content: '"';
     color: #000;
 }
 .cde-value[data-type="string"] > .cde-value-ellipsis {
     display: inline-block;
-    width: 1em;
+    width: 2em;
     height: 1em;
     line-height: 1em;
     overflow: hidden;
     color: transparent;
     vertical-align: middle;
-    margin: -1em 0.5em;
+    margin: 0em 0.25em;
     border-radius: 3px;
 }
 .cde-value[data-type="string"] > .cde-value-ellipsis:before {
-    content: '\2026';
+    content: '\00b7\00b7\00b7';
     color: #fee;
     user-select: none;
     background: #d00;
@@ -2322,6 +2322,9 @@ body.modal-stack-show .modal-stack {
 .cde-properties > .cde-toggle-show-hidden,
 .cde-properties.cde-properties-show-hidden > .cde-dir-value-hidden {
 	display: none !important;
+}
+#elBlobValueView > .cde-dir-value {
+	display: block;
 }
 
 </style>
@@ -2450,7 +2453,7 @@ body.modal-stack-show .modal-stack {
 	<script>
 	
 	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueView) {
-		var bigValuesRe = /(BLOB|STRING|GEOMETRY)$/i;
+		var bigValuesRe = /(BLOB|STRING|GEOMETRY|JSON)$/i;
 		var intValuesRe = /(CHAR|INT|LONG)$/i;
 		
 		function encode(value, type, base) {
@@ -2476,7 +2479,7 @@ body.modal-stack-show .modal-stack {
 			elBlobValueView.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
 		}
 		
-		function showValue(value, type) {
+		function showValue(value, type, name) {
 			var elDefMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="data,256"]');
 			var elJsonMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="json"]');
 			var mode = elModalBlobValue.querySelector('[name="blob-value-display-mode"]:checked').value;
@@ -2491,7 +2494,7 @@ body.modal-stack-show .modal-stack {
 				if (!looksLikeJson) {
 					elJsonMode.checked = false;
 					elDefMode.checked = true;
-					return showValue(value, type);
+					return showValue(value, type, name);
 				}
 				elBlobValueView.removeAttribute('contenteditable');
 				elBlobValueView.textContent = '';
@@ -2502,7 +2505,7 @@ body.modal-stack-show .modal-stack {
 				catch (e) {
 					o = e;
 				}
-				elBlobValueView.appendChild(createDirElement(o));
+				elBlobValueView.appendChild(createDirElement(o, null, null, 1));
 			}
 			else {
 				var base = +mode.split(',')[1];
@@ -2519,13 +2522,13 @@ body.modal-stack-show .modal-stack {
 			elModalBlobValue.__td = td;
 			
 			elModalBlobValueTitle.textContent = td.dataset.name + ' (' + td.dataset.type + ')';
-			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type);
+			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
 			
 			Modal.show(elModalBlobValue);
 		});
 		
 		elModalBlobValue.addEventListener('change', function (event) {
-			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type);
+			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
 		});
 		
 		elBlobValueView.addEventListener('keydown', function (event) {
@@ -4121,11 +4124,20 @@ Content-Type: application/javascript; charset="utf-8"
 
 // <script>
 var createDirElement = (function () {
-	function createDirElement(value, name, descriptor) {
+	var TPL = {};
+	
+	TPL.valueEllipsis = document.createElement('span');
+	TPL.valueEllipsis.className = 'cde-value-ellipsis';
+	
+	TPL.valueQuot = document.createElement('span');
+	TPL.valueQuot.className = 'cde-value-quot';
+	TPL.valueQuot.textContent = '"';
+	
+	function createDirElement(value, name, descriptor, expandDepth) {
 		var valueType = value === null ? 'null' : typeof value;
 		var valueClass;
 		try {
-			valueClass = valueType == 'object' ? value.constructor.name : '';
+			valueClass = valueType === 'object' ? value.constructor.name : '';
 		}
 		catch (e) {
 			valueClass = '?';
@@ -4158,72 +4170,87 @@ var createDirElement = (function () {
 			value = 'null';
 		else if (value === undefined)
 			value = 'undefined';
-		if (valueType == 'string' && value.length > 500) {
+		if (valueType === 'string' && value.length > 500) {
 			value = [
 				value.slice(0, 200),
 				value.slice(200, value.length - 200),
 				value.slice(value.length - 200)
 			];
 			for (var i = 0; i < value.length; i++) {
-				var span = document.createElement('span');
+				var span = i !== 1 ? document.createElement('span') : TPL.valueEllipsis.cloneNode();
 				span.textContent = value[i];
-				if (i == 1)
-					span.className = 'cde-value-ellipsis';
 				elValue.appendChild(span);
 			}
 		}
 		else {
-			elValue.textContent = valueType == 'object' ? valueClass : value;
+			elValue.textContent = valueType === 'object' ? valueClass : value;
 			if (value instanceof Array) {
 				elValue.textContent += '(' + value.length + ')';
-				
 			}
 		}
+		
+		if (valueType === 'string') {
+			elValue.insertBefore(TPL.valueQuot.cloneNode(true), elValue.childNodes[0]);
+			elValue.insertBefore(TPL.valueQuot.cloneNode(true), null);
+		}
+		
 		res.appendChild(elValue);
 		
-		if (valueType == 'object') {
+		if (valueType === 'object') {
 			elValue.addEventListener('click', createDirElement.objectClickHandler.bind(res));
+			expandDepth = +expandDepth;
+			if (expandDepth > 0) {
+				createDirElement.expand(res, expandDepth - 1);
+			}
 		}
 		
 		return res;
 	}
+	createDirElement.collapse = function (el) {
+		var properties = el.querySelector(':scope > .cde-properties');
+		if (!properties)
+			return false;
+		el.classList.remove('cde-properties-expanded');
+		properties.remove();
+		return true;
+	};
+	createDirElement.expand = function (el, expandDepth) {
+		if (!el.dirElementValue || typeof el.dirElementValue !== 'object' || el.classList.contains('cde-properties-expanded'))
+			return false;
+		el.classList.add('cde-properties-expanded');
+		var properties = document.createElement('div');
+		properties.className = 'cde-properties';
+		
+		var o;
+		var hidden = false;
+		var nonHidden = false;
+		for (var o = el.dirElementValue; o !== null; o = Object.getPrototypeOf(o)) {
+			var descriptors = Object.getOwnPropertyDescriptors(o);
+			for (var k in descriptors) {
+				var descriptor = descriptors[k];
+				nonHidden = nonHidden || !descriptor.enumerable;
+				hidden = hidden || descriptor.enumerable;
+				descriptor.inherited = o != el.dirElementValue;
+				var child = createDirElement(descriptor.value, k, descriptor, expandDepth);
+				properties.appendChild(child);
+			}
+		}
+		el.appendChild(properties);
+		
+		if (hidden && nonHidden) {
+			var elMore = document.createElement('span');
+			elMore.className = 'cde-toggle-show-hidden';
+			elMore.addEventListener('click', createDirElement.showHiddenClickHandler.bind(elMore));
+			properties.appendChild(elMore);
+		}
+		else if (!hidden && nonHidden) {
+			properties.classList.add('cde-properties-show-hidden');
+		}
+		return true;
+	};
 	createDirElement.objectClickHandler = function (event) {
 		event.preventDefault();
-		var properties = this.querySelector(':scope > .cde-properties');
-		if (properties) {
-			this.classList.remove('cde-properties-expanded');
-			properties.remove();
-		}
-		else {
-			this.classList.add('cde-properties-expanded');
-			properties = document.createElement('div');
-			properties.className = 'cde-properties';
-			
-			var o;
-			var hidden = false;
-			var nonHidden = false;
-			for (var o = this.dirElementValue; o !== null; o = Object.getPrototypeOf(o)) {
-				var descriptors = Object.getOwnPropertyDescriptors(o);
-				for (var k in descriptors) {
-					var descriptor = descriptors[k];
-					nonHidden = nonHidden || !descriptor.enumerable;
-					hidden = hidden || descriptor.enumerable;
-					descriptor.inherited = o != this.dirElementValue;
-					properties.appendChild(createDirElement(descriptor.value, k, descriptor));
-				}
-			}
-			
-			this.appendChild(properties);
-			if (hidden && nonHidden) {
-				var elMore = document.createElement('span');
-				elMore.className = 'cde-toggle-show-hidden';
-				elMore.addEventListener('click', createDirElement.showHiddenClickHandler.bind(elMore));
-				properties.appendChild(elMore);
-			}
-			else if (!hidden && nonHidden) {
-				properties.classList.add('cde-properties-show-hidden');
-			}
-		}
+		createDirElement.collapse(this) || createDirElement.expand(this);
 	};
 	createDirElement.showHiddenClickHandler = function (event) {
 		this.parentElement.classList.add('cde-properties-show-hidden');
