@@ -1,11 +1,11 @@
 <?php
 
 set_error_handler(function ($errno, $errstr, $errfile = '', $errline = 0, array $errcontext = null) {
-	header(' : ', true, 400);
+	setResponseCode(400);
 	die(json_encode(MyError::fromNativeError($errno, $errstr, $errfile, $errline)->describe()));
 });
 set_exception_handler(function ($exception) {
-	header(' : ', true, 400);
+	setResponseCode(400);
 	die(json_encode((new MyError($exception))->describe()));
 });
 
@@ -434,6 +434,13 @@ class MyError extends Exception {
 	}
 }
 
+// FUNCTIONS:
+
+function setResponseCode($code, $responseText = '') {
+	$protocol = isset($_SERVER['SERVER_PROTOCOL']) ? $_SERVER['SERVER_PROTOCOL'] : 'HTTP/1.0';
+	return header(trim("$protocol $code $responseText"), true, $code);
+}
+
 // PROCESS REQUEST:
 
 session_name('mymi_session');
@@ -458,7 +465,7 @@ if ($_GET['api']) {
 		$res = Api::process($_GET['api'], $params);
 	}
 	catch (Exception $e) {
-		header(' : ', true, 400);
+		setResponseCode(400);
 		$res = MyError::getErrorDescription($e);
 	}
 	$res = json_encode($res);
@@ -469,7 +476,7 @@ elseif ($_GET['part']) {
 	$multipartFile = new MultipartFile();
 	$chunk = $multipartFile->getChunk($_GET['part']);
 	if (!$chunk) {
-		header(' : ', true, 404);
+		setResponseCode(404);
 		throw new MyError('NOT_FOUND');
 	}
 	$cacheMaxAge = 3600;
@@ -535,7 +542,7 @@ elseif (isset($_GET['download'])) {
 	die(file_get_contents(__FILE__));
 }
 else {
-	header(' : ', true, 404);
+	setResponseCode(404);
 	throw new MyError('NOT_FOUND');
 }
 
