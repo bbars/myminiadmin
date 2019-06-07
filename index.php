@@ -2548,7 +2548,7 @@ body.modal-stack-show .modal-stack {
 		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="json">JSON</label>
 		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="php">PHP</label>
 	</div>
-	<div id="elBlobValueView"></div>
+	<div id="elBlobValueView" autofocus tabindex="0"></div>
 	<script src="?part=create-dir-element.js"></script>
 	<script src="?part=php-unserialize.js"></script>
 	<script>
@@ -2613,7 +2613,6 @@ body.modal-stack-show .modal-stack {
 				elBlobValueView.setAttribute('contenteditable', 'true');
 				encode(value, type, base);
 			}
-			
 		}
 		
 		elResultset.addEventListener('click', function (event) {
@@ -3682,7 +3681,7 @@ Content-Type: application/javascript; charset="utf-8"
 		}
 		setTimeout(function () {
 			(focus || modal).focus();
-		}, 50);
+		}, 0);
 	}
 	
 	var Modal = window.Modal = {
