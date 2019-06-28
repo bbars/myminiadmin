@@ -3566,6 +3566,12 @@ document.addEventListener('drop', function (event) {
 		}
 		capture = null;
 	});
+	elAside.addEventListener('click', function (event) {
+		if (event.clientX < elAside.clientWidth + elAside.offsetLeft) {
+			return;
+		}
+		toggleAside();
+	}, { passive: true });
 	function toggleAside(show) {
 		elAside.style.transition = 'left 0.2s ease';
 		elAside.style.left = null;
