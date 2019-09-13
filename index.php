@@ -977,12 +977,14 @@ function executeQuery(sql, safeRows) {
 	var matches = /\b(?:(database)|(table|view))\b/i.exec(sql) || [];
 	var thenRefreshBases = !!matches[1];
 	var thenRefreshTables = !!matches[2];
-	safeRows = safeRows || 1000;
+	safeRows = safeRows || 100;
 	
 	function run(sql) {
 		editor.setDisabled(true);
-		elResultset.innerHTML = '';
-		elResultset.__resultsTables = [];
+		for (var i = elResultset.children.length - 1; i >= 0; i--) {
+			if (!elResultset.children[i].classList.contains('pinned'))
+				elResultset.removeChild(elResultset.children[i]);
+		}
 		cleanupCurrentTables();
 		elMain.classList.add('loading');
 		return apiCall('query', selectedConnection, selectedBase, sql, safeRows, true).promise;
@@ -1031,20 +1033,29 @@ function executeQuery(sql, safeRows) {
 					}
 					if (table) {
 						tabContents.appendChild(table);
-						elResultset.__resultsTables.push(table);
 						
 						var resultCtl = document.createElement('div');
 						resultCtl.classList.add('result-ctl');
 						tabContents.appendChild(resultCtl);
 						
+						var pinBtn = document.createElement('button');
+						pinBtn.innerHTML = '&#x1f4cc;';
+						pinBtn.title = 'Pin Result';
+						pinBtn.className = 'btn-pin btn-flat';
+						resultCtl.appendChild(pinBtn);
+						pinBtn.__table = table;
+						pinBtn.__tab = tab;
+						
 						var chartBtn = document.createElement('button');
 						chartBtn.innerHTML = '&#x1f4c8;';
+						chartBtn.title = 'Chart';
 						chartBtn.className = 'btn-chart btn-flat';
 						resultCtl.appendChild(chartBtn);
 						chartBtn.__table = table;
 						
 						var exportBtn = document.createElement('button');
 						exportBtn.innerHTML = '&#x1f4be;';
+						exportBtn.title = 'Export';
 						exportBtn.className = 'btn-export btn-flat';
 						resultCtl.appendChild(exportBtn);
 						exportBtn.__table = table;
@@ -1057,6 +1068,9 @@ function executeQuery(sql, safeRows) {
 					}
 				}
 				elResultset.appendChild(tab);
+				if (i === 0) {
+					elResultset.scrollTop = tab.offsetTop;
+				}
 			}
 			
 			if (thenRefreshBases)
@@ -1084,6 +1098,7 @@ function createTableFromResult(result) {
 	if (!result || !result.fields || !result.fields.length)
 		return null;
 	
+	const SHORTEN_LENGTH = 200;
 	var selectedBase = getSelectedBase();
 	var table = document.createElement('table');
 	table.classList.add('result');
@@ -1129,8 +1144,8 @@ function createTableFromResult(result) {
 		tbody.appendChild(tr);
 	}
 	
-	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY)$/i;
-	var urlValueRe = /^[a-z]+:\/\/[^\s/]+\S*$/;
+	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY|JSON)$/i;
+	var urlValueRe = /^(?:[a-z]+:|file:\/)\/\/[^\s/]+\S*$/;
 	var y = 0;
 	function appendRowsChunk() {
 		var limY = Math.min(y + 300, result.rows.length);
@@ -1149,8 +1164,9 @@ function createTableFromResult(result) {
 				td.dataset.y = y;
 				td.dataset.name = result.fields[x].name;
 				td.__value = value;
-				if (value && bigValuesRe.test(type)) {
-					value = value.substr(0, 200);
+				if (value && bigValuesRe.test(type) && value.length > (SHORTEN_LENGTH + 3)) {
+					value = value.substr(0, SHORTEN_LENGTH);
+					td.className += ' value-shortened';
 				}
 				td.textContent = value;
 				if (urlValueRe.test(value)) {
@@ -1723,6 +1739,10 @@ button.btn-flat {
 	padding: 0.5em;
 	min-width: initial;
 }
+button.btn-flat:hover,
+button.btn-flat:focus {
+	background: #edb;
+}
 
 button:focus,
 select:focus,
@@ -1871,6 +1891,7 @@ textarea:focus {
 
 .tab {
 	display: block;
+	width: fit-content;
 }
 .tab > .tab-contents {
 	display: inline-block;
@@ -1885,9 +1906,10 @@ textarea:focus {
 
 .tab > .tab-contents .result-ctl {
 	display: inline-flex;
-	flex-wrap: wrap;
-	flex-direction: column;
 	vertical-align: top;
+	flex-wrap: nowrap;
+	flex-direction: row;
+	align-items: baseline;
 	margin: 1.2em 0.75em 0;
 	position: sticky;
 	top: 0.75em;
@@ -1897,14 +1919,18 @@ textarea:focus {
 }
 .result-ctl > :first-child {
 	border-top-left-radius: 2px;
-	border-top-right-radius: 2px;
+	border-bottom-left-radius: 2px;
 }
 .result-ctl > :last-child  {
-	border-bottom-left-radius: 2px;
+	border-top-right-radius: 2px;
 	border-bottom-right-radius: 2px;
 }
 .result-ctl > * + * {
 	margin-top: 1px;
+}
+
+.tab.pinned .btn-pin {
+	box-shadow: #09f7 0 0 1.5em 0 inset;
 }
 
 .m-t { margin-top:    0.5em; }
@@ -2063,6 +2089,16 @@ table.result * tr.empty > td {
 	text-align: left;
 	background: #ff9;
 	color: #900;
+}
+
+table.result tbody tr > .value-shortened:after {
+    content: '\27f6';
+    color: #000;
+    font-weight: 600;
+    /* background: #ccc; */
+    padding: 0 0.3em;
+    /* border-radius: 0.2em; */
+    margin: 0 0.3em;
 }
 
 #elResultset .result-info,
@@ -3276,6 +3312,14 @@ editor.addEventListener('keydown', function (event) {
 		return Date.now ? Date.now() : (new Date()).getTime();
 	}
 })(elResultset);
+
+elResultset.addEventListener('click', function (event) {
+	var pinBtn = event && event.target && event.target.closest('.btn-pin');
+	if (!pinBtn || !pinBtn.__tab) {
+		return;
+	}
+	pinBtn.__tab.classList.toggle('pinned');
+});
 
 elCreateConnection.addEventListener('click', function (event) {
 	createNewConnection()
