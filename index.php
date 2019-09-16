@@ -138,6 +138,9 @@ class MultipartFile {
 }
 
 class Api {
+	const PROJECT_GIT_URL_REGEXP = '/\bmyminiadmin\.git$/';
+	const PROJECT_GIT_RAW_URL = 'https://raw.githubusercontent.com/bbars/myminiadmin/master/index.php';
+	
 	const CHARSETNR_UTF8 = 33;
 	protected static $encodeUtf8Types = array(
 		MYSQLI_TYPE_TINY_BLOB => 1,
@@ -371,6 +374,67 @@ class Api {
 		}
 		return $res;
 	}
+	
+	public static function checkAdministrationPrivileges($dbCfg) {
+		$grants = self::query($dbCfg, '', 'SHOW GRANTS FOR CURRENT_USER()')[0];
+		if (empty($grants['rows'])) {
+			return null;
+		}
+		foreach ($grants['rows'] as $row) {
+			if (preg_match('/\bALL\s+PRIVILEGES\s+ON\s+\*\s*\.\s*\*/i', $row[0]))
+				return true;
+		}
+		return false;
+	}
+	
+	protected static function getAppGitUrl() {
+		if (!function_exists('shell_exec')) {
+			return null;
+		}
+		$res = @trim(shell_exec('git config --get remote.origin.url'));
+		if (!$res) {
+			return null;
+		}
+		if (!preg_match(self::PROJECT_GIT_URL_REGEXP, $res)) {
+			return false;
+		}
+		return $res;
+	}
+	
+	public static function getAppVersionCode() {
+		return !self::getAppGitUrl() ? null : @trim(shell_exec("git rev-parse --short HEAD 2>/dev/null || echo '0'"));
+	}
+	
+	public static function updateApp($dbCfg) {
+		if (!self::checkAdministrationPrivileges($dbCfg)) {
+			return null;
+		}
+		if (self::getAppGitUrl()) {
+			exec('git pull', $out, $exitCode);
+			return $exitCode != 0 ? false : self::getAppVersionCode();
+		}
+		else if (self::PROJECT_GIT_RAW_URL) {
+			$pathUpd = tempnam('/tmp', 'mymupd');
+			$success = copy(self::PROJECT_GIT_RAW_URL, $pathUpd);
+			if (!$success) {
+				return false;
+			}
+			$pathBak = tempnam('/tmp', 'mymbak');
+			$success = rename(__FILE__, $pathBak);
+			if (!$success) {
+				@unlink($pathUpd);
+				return false;
+			}
+			$success = rename($pathUpd, __FILE__);
+			if (!$success) {
+				@rename($pathBak, __FILE__);
+				@unlink($pathUpd);
+				return false;
+			}
+			return true;
+		}
+		return null;
+	}
 }
 
 class MyError extends Exception {
@@ -564,10 +628,11 @@ X-Execute: On
 <link rel="shortcut icon" href="?part=favicon-16.png" type="image/png">
 <title>MyMiniAdmin</title>
 <script>
-const server = <?= json_encode(array(
+var SERVER = <?= json_encode(array(
 	'file' => substr($_SERVER['SCRIPT_NAME'], 1),
 	'sessionName' => session_name(),
 	// 'document_root' => $_SERVER['DOCUMENT_ROOT'],
+	'appVersionCode' => Api::getAppVersionCode(),
 )) ?>;
 </script>
 <script src="?part=lz-string-1.4.4.js"></script>
@@ -810,8 +875,13 @@ function refreshBases(selectedBase) {
 			var option = document.createElement('option');
 			option.value = base;
 			option.textContent = base;
-			if (base + 'z' === selectedBase + 'z')
+			if (base + 'z' === selectedBase + 'z') {
 				option.selected = true;
+				if (!document.__originalTitle) {
+					document.__originalTitle = document.title;
+				}
+				document.title = base + ' \u2014 ' + document.__originalTitle;
+			}
 			elBases.appendChild(option);
 		}
 		return refreshTables();
@@ -977,7 +1047,7 @@ function executeQuery(sql, safeRows) {
 	var matches = /\b(?:(database)|(table|view))\b/i.exec(sql) || [];
 	var thenRefreshBases = !!matches[1];
 	var thenRefreshTables = !!matches[2];
-	safeRows = safeRows || 100;
+	safeRows = safeRows || config.safeRows || 100;
 	
 	function run(sql) {
 		editor.setDisabled(true);
@@ -1318,7 +1388,7 @@ function showError(error, duplicate) {
 		var link = '';
 		var file = document.createElement('div');
 		file.textContent = error.file;
-		var match = new RegExp(server.file + ':(\\d+)$').exec(error.file);
+		var match = new RegExp(SERVER.file + ':(\\d+)$').exec(error.file);
 		if (match) {
 			file.innerHTML = '<a href="?source#L' + match[1] + '" target="_blank">' + file.innerHTML + '</a>';
 		}
@@ -1516,6 +1586,7 @@ var config = new (function LocalConfig() {
 	this.splitter_elMain = 0;
 	this.enableSnippets = true;
 	this.enableLiveAutocompletion = true;
+	this.safeRows = 100;
 	
 	for (var k in this) {
 		(function (k, defaultValue) {
@@ -1913,6 +1984,7 @@ textarea:focus {
 	margin: 1.2em 0.75em 0;
 	position: sticky;
 	top: 0.75em;
+	user-select: none;
 }
 .result-ctl > * {
 	border-radius: 0;
@@ -2275,6 +2347,14 @@ body.modal-stack-show .modal-stack {
 	margin: 0.25em 0;
 }
 
+button.narrow,
+.btn.narrow {
+	flex-basis: 0;
+	min-width: unset;
+	width: 0;
+	padding-left: 0.5em;
+}
+
 .value-link {
 	display: inline-block;
 	position: relative;
@@ -2480,7 +2560,8 @@ body.modal-stack-show .modal-stack {
 			<div id="elTables"></div>
 			<div id="elButtons" class="control-row">
 				<button id="elStatButton">Stat</button>
-				<button id="elLogoutButton">Log Out</button>
+				<button id="elLogoutButton" class="narrow">&#x23FB;</button>
+				<button id="elPreferencesButton" class="narrow">&#x1F527;</button>
 			</div>
 		</aside>
 		<main id="elMain" class="flex-col flex-1-auto">
@@ -2574,8 +2655,66 @@ body.modal-stack-show .modal-stack {
 	
 	</script>
 </div>
+<div id="elModalPreferences" class="modal">
+	<h2 style="margin-top: 0">Preferences</h2>
+	<div class="m-b">
+		<label>
+			Safe rows:<br />
+			<input id="elConfig_safeRows" type="number" min="1" step="1">
+		</label>
+	</div>
+	<h2>About MyMiniAdmin</h2>
+	<div class="m-b">
+		<p>
+			Project page
+			<a href="https://github.com/bbars/myminiadmin" target="_blank">@github</a>
+		</p>
+		<p>
+			Version code:
+			<span class="m-r"><?= Api::getAppVersionCode() ?: 'N/A' ?></span>
+			<button id="elUpdateAppButton">Update</button>
+		</p>
+	</div>
+	<script>
+	
+	(function (elModalPreferences) {
+		elPreferencesButton.addEventListener('click', function () {
+			Modal.show(elModalPreferences);
+		});
+		elModalPreferences.addEventListener('modal-show', function (event) {
+			elConfig_safeRows.value = config.safeRows;
+		});
+		elModalPreferences.addEventListener('modal-hide', function (event) {
+			/**/
+		});
+		elConfig_safeRows.addEventListener('change', function (event) {
+			config.safeRows = +elConfig_safeRows.value;
+		});
+		elUpdateAppButton.addEventListener('click', function () {
+			if (!confirm("Are you sure?")) {
+				return;
+			}
+			apiCall('updateApp', getSelectedConnectionId()).promise.then(function (newVersionCode) {
+				if (newVersionCode === false || newVersionCode === null) {
+					alert("Unable to update");
+				}
+				else if (!newVersionCode && !getAppVersionCode) {
+					alert("Done. Refresh page to use new version");
+				}
+				else if (newVersionCode !== SERVER.appVersionCode) {
+					alert("Updated successfully. Refresh page to use new version");
+				}
+				else {
+					alert("No updates");
+				}
+			});
+		});
+		
+	})(elModalPreferences);
+	
+	</script>
+</div>
 <div id="elModalBlobValue" class="modal">
-	<span class="modal-close"></span>
 	<h2 id="elModalBlobValueTitle"></h2>
 	<div class="m-b">
 		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,256" checked>Raw</label>
@@ -3422,8 +3561,8 @@ elConsole.addEventListener('click', function (event) {
 });
 
 elLogoutButton.addEventListener('click', function () {
-	if (confirm('Are you sure?\nAll connection settings will be lost!')) {
-		setCookie(server.sessionName, null);
+	if (confirm('Are you sure want to log out?\nAll connection settings will be lost!')) {
+		setCookie(SERVER.sessionName, null);
 		document.location = '?logout';
 	}
 });
@@ -3634,7 +3773,7 @@ Name: server
 Content-Type: application/javascript; charset="utf-8"
 X-Execute: On
 
-const server = <?= json_encode(array(
+var SERVER = <?= json_encode(array(
 	'file' => substr(__FILE__, strlen($_SERVER['DOCUMENT_ROOT'])),
 )) ?>;
 
