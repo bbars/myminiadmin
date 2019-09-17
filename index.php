@@ -3121,6 +3121,7 @@ button.narrow,
 	<script>
 	
 	(function (context, elModalExport, elExportCols, elExportResult) {
+		var unquotedTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
 		context.showExport = function (result) {
 			while (elExportCols.children.length)
 				elExportCols.removeChild(elExportCols.children[0]);
@@ -3144,10 +3145,12 @@ button.narrow,
 				elExportResult.value = '';
 				var checkedColsNames = [];
 				var checkedCols = Array.prototype.slice.call(elExportCols.querySelectorAll('input:checked'), 0);
+				var quotedCols = {};
 				var tables = [];
 				checkedCols = checkedCols.map(function (v, i) {
 					var col = +v.value
 					var colName = '' + v.title;
+					quotedCols[col] = unquotedTypes.indexOf(result.fields[col].type) < 0;
 					colName = '`' + backtickEscape(colName) + '`';
 					checkedColsNames.push(colName);
 					var table = result.fields[col].orgtable;
@@ -3161,16 +3164,15 @@ button.narrow,
 					return;
 				
 				var lines = [];
-				var i, x, y, v;
+				var i, x, y, v, quoteValue;
 				for (i = 0; i < checkedCols.length; i++) {
 					x = checkedCols[i];
+					quoteValue = quotedCols[x];
 					for (y = 0; y < result.rows.length; y++) {
 						v = result.rows[y][x];
-						if (typeof v == 'number')
-							v = v.toString();
-						else if (v === null)
+						if (v === null)
 							v = 'null';
-						else
+						else if (quoteValue)
 							v = '"' + ('' + v).replace(/"/g, '""') + '"';
 						
 						if (!lines[y])
