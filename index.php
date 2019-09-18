@@ -1774,7 +1774,8 @@ body.dragover:after {
 input,
 select,
 textarea,
-button {
+button,
+.btn {
 	font-family: inherit;
 	font-size: inherit;
 	box-sizing: border-box;
@@ -1794,16 +1795,22 @@ textarea {
 	padding: 0.35em 0.5em;
 	line-height: 1.3em;
 }
-button {
+button,
+.btn {
 	background: #d9ccaa;
 	border: rgba(0,0,0, 0.1) 1px solid;
 	text-shadow: rgba(255,255,255, 0.6) 0px 1px;
-	padding: 0.5em 0.75em;
+	padding: 0.25em 0.35em;
 	min-width: 2em;
 	text-align: center;
 	cursor: pointer;
+	position: relative;
 }
-button.btn-flat {
+button {
+	padding: 0.5em 0.75em;
+}
+button.btn-flat,
+.btn.btn-flat {
 	border: none;
 	background: #eee;
 	text-shadow: none;
@@ -1811,8 +1818,22 @@ button.btn-flat {
 	min-width: initial;
 }
 button.btn-flat:hover,
-button.btn-flat:focus {
+button.btn-flat:focus,
+.btn.btn-flat:hover,
+.btn.btn-flat:focus {
 	background: #edb;
+}
+
+button.loading:after,
+.btn.loading:after {
+	position: absolute;
+	content: '';
+	left: 0;
+	top: 0;
+	width: 100%;
+	height: 100%;
+	background: rgba(128,128,128,0.7) url('?part=loader.gif') center center no-repeat;
+	z-index: 10;
 }
 
 button:focus,
@@ -2664,16 +2685,16 @@ button.narrow,
 		</label>
 	</div>
 	<h2>About MyMiniAdmin</h2>
-	<div class="m-b">
+	<div class="--m-b">
 		<p>
 			Project page
 			<a href="https://github.com/bbars/myminiadmin" target="_blank">@github</a>
 		</p>
-		<p>
+		<div class="--m-b">
 			Version code:
 			<span class="m-r"><?= Api::getAppVersionCode() ?: 'N/A' ?></span>
-			<button id="elUpdateAppButton">Update</button>
-		</p>
+			<span id="elUpdateAppButton" class="btn hidden">Update</span>
+		</div>
 	</div>
 	<script>
 	
@@ -2694,20 +2715,40 @@ button.narrow,
 			if (!confirm("Are you sure?")) {
 				return;
 			}
-			apiCall('updateApp', getSelectedConnectionId()).promise.then(function (newVersionCode) {
-				if (newVersionCode === false || newVersionCode === null) {
-					alert("Unable to update");
-				}
-				else if (!newVersionCode && !getAppVersionCode) {
-					alert("Done. Refresh page to use new version");
-				}
-				else if (newVersionCode !== SERVER.appVersionCode) {
-					alert("Updated successfully. Refresh page to use new version");
-				}
-				else {
-					alert("No updates");
-				}
-			});
+			elUpdateAppButton.disabled = true;
+			elUpdateAppButton.classList.add('loading');
+			var elUpdateResult = document.createElement('div');
+			elUpdateResult.className = 'm-t';
+			elUpdateAppButton.parentElement.insertBefore(elUpdateResult, elUpdateAppButton.nextElementSibling);
+			apiCall('updateApp', getSelectedConnectionId()).promise
+				.catch(function (error) {
+					elUpdateAppButton.disabled = false;
+					elUpdateAppButton.classList.remove('loading');
+					elUpdateResult.textContent = error;
+				})
+				.then(function (newVersionCode) {
+					elUpdateAppButton.disabled = false;
+					elUpdateAppButton.classList.remove('loading');
+					if (newVersionCode === false || newVersionCode === null) {
+						elUpdateResult.textContent = "Unable to update (insufficient privileges?)";
+					}
+					else if (!newVersionCode && !getAppVersionCode) {
+						elUpdateResult.textContent = "Done. Refresh page to use new version";
+					}
+					else if (newVersionCode !== SERVER.appVersionCode) {
+						elUpdateResult.textContent = "Updated successfully. Refresh page to use new version";
+						var elCompareVersionsLink = document.createElement('a');
+						elCompareVersionsLink.href = 'https://github.com/bbars/myminiadmin/compare/' + encodeURIComponent(SERVER.appVersionCode) + '..' + encodeURIComponent(newVersionCode);
+						elCompareVersionsLink.textContent = "New version " + newVersionCode;
+						elCompareVersionsLink.target = '_blank';
+						elUpdateAppButton.appendChild(document.createElement('br'));
+						elUpdateAppButton.appendChild(elCompareVersionsLink);
+					}
+					else {
+						elUpdateResult.textContent = "No updates";
+					}
+				})
+			;
 		});
 		
 	})(elModalPreferences);
