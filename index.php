@@ -1787,8 +1787,8 @@ var config = new (function LocalConfig() {
 						elCompareVersionsLink.href = 'https://github.com/bbars/myminiadmin/compare/' + encodeURIComponent(SERVER.appVersionCode) + '..' + encodeURIComponent(newVersionCode);
 						elCompareVersionsLink.textContent = "New version " + newVersionCode;
 						elCompareVersionsLink.target = '_blank';
-						elUpdateAppButton.appendChild(document.createElement('br'));
-						elUpdateAppButton.appendChild(elCompareVersionsLink);
+						elUpdateResult.appendChild(document.createElement('br'));
+						elUpdateResult.appendChild(elCompareVersionsLink);
 					}
 					else {
 						elUpdateResult.textContent = "No updates";
