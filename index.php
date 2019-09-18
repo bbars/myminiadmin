@@ -2938,9 +2938,11 @@ button.narrow,
 		position: relative;
 		line-height: 1.4em;
 		height: 1.4em;
+		transition: top 0.1s ease;
 	}
 	#elChartInfo > div:before {
 		content: attr(data-label);
+		white-space: nowrap;
 		position: absolute;
 		right: 100%;
 		margin-right: 0.35em;
@@ -3035,26 +3037,59 @@ button.narrow,
 				});
 			}
 			
-			var prevValIndex = -1;
+			function redrawChartInfo(hoveredItem) {
+				if (!elChartInfo.__h4) {
+					elChartInfo.__h4 = document.createElement('h4');
+					elChartInfo.insertBefore(elChartInfo.__h4, elChartInfo.children[0]);
+				}
+				elChartInfo.__h4.textContent = hoveredItem.x instanceof Date && hoveredItem.x.toISOString
+					? hoveredItem.x.toISOString().replace(/^(.+)T(.+)(?:\.\d*)Z$/, '$1 $2')
+					: hoveredItem.x;
+				while (elChartInfo.children.length > hoveredItem.y.length + 1) {
+					elChartInfo.removeChild(elChartInfo.children[1]);
+				}
+				
+				var sortedVals = hoveredItem.y.map(function (v, i) {
+					return [i, v];
+				});
+				sortedVals.sort(function (a, b) {
+					return b[1] - a[1] || a[0] - b[0];
+				});
+				var offsets = [];
+				for (var i = sortedVals.length - 1; i >= 0; i--) {
+					offsets[sortedVals[i][0]] = i - sortedVals[i][0];
+				}
+				var height = null;
+				
+				for (var i = 0; i < hoveredItem.y.length; i++) {
+					var el = elChartInfo.children[i + 1];
+					if (!el) {
+						el = document.createElement('div');
+						elChartInfo.appendChild(el);
+					}
+					if (height === null) {
+						height = el.clientHeight;
+					}
+					el.dataset.label = chart._labels[i];
+					el.textContent = typeof hoveredItem.y[i] !== 'undefined' ? hoveredItem.y[i] : '';
+					el.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
+					el.style.top = offsets[i] * height + 'px';
+				}
+			}
+			
+			var prevHoveredItemIndex = -1;
+			var tmrRedrawChartInfo;
 			function onChartContainerEvent(event) {
 				if (event.type == 'hovervalue') {
 					var val = event.detail;
-					if (prevValIndex !== val.index) {
-						while (elChartInfo.children.length)
-							elChartInfo.removeChild(elChartInfo.children[0]);
-						prevValIndex = val.index;
-						var el = document.createElement('h4');
-						el.textContent = val.x instanceof Date && val.x.toISOString
-							? val.x.toISOString().replace(/^(.+)T(.+)(?:\.\d*)Z$/, '$1 $2')
-							: val.x;
-						elChartInfo.appendChild(el);
-						for (var i = 0; i < val.y.length; i++) {
-							el = document.createElement('div');
-							el.dataset.label = chart._labels[i];
-							el.textContent = typeof val.y[i] != 'undefined' ? val.y[i] : '';
-							el.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
-							elChartInfo.appendChild(el);
-						}
+					if (prevHoveredItemIndex < 0) {
+						prevHoveredItemIndex = val.index;
+						redrawChartInfo(val);
+					}
+					else if (prevHoveredItemIndex !== val.index) {
+						clearTimeout(tmrRedrawChartInfo);
+						prevHoveredItemIndex = val.index;
+						tmrRedrawChartInfo = setTimeout(redrawChartInfo.bind(null, val), 50);
 					}
 				}
 				else if (event.type == 'mousemove' && event.currentTarget == elChartContainer) {
@@ -3067,9 +3102,11 @@ button.narrow,
 					redraw();
 				}
 				else if (event.type == 'modal-hide') {
-					prevValIndex = -1;
-					while (elChartInfo.children.length)
+					prevHoveredItemIndex = -1;
+					delete elChartInfo.__h4;
+					while (elChartInfo.children.length) {
 						elChartInfo.removeChild(elChartInfo.children[0]);
+					}
 					elModalChart.removeEventListener('change', onModalEvent);
 					elModalChart.removeEventListener('modal-hide', onModalEvent);
 					elChartContainer.removeEventListener('hovervalue', onChartContainerEvent);
