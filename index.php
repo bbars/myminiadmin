@@ -435,6 +435,182 @@ class Api {
 		}
 		return null;
 	}
+	
+	protected static function getCryptKeyComponents() {
+		$statRoot = stat('/');
+		$statSelf = stat(__FILE__);
+		$serverValueNames = [
+			'DOCUMENT_ROOT',
+			'HOME',
+			'HTTP_HOST',
+			'PHP_SELF',
+			'REQUEST_SCHEME',
+			'SCRIPT_FILENAME',
+			'SERVER_ADDR',
+			'SERVER_NAME',
+			'SERVER_PORT',
+			'SERVER_PROTOCOL',
+			'SERVER_SOFTWARE',
+			'USER',
+		];
+		$serverValues = array();
+		foreach ($serverValueNames as $i => $serverValueName) {
+			$serverValues[$serverValueName] = !isset($_SERVER[$serverValueName]) ? $i : $_SERVER[$serverValueName];
+		}
+		$hwaddr = null;
+		if (function_exists('shell_exec')) {
+			$ifconfig = @shell_exec('ifconfig');
+			if (preg_match('/\b(ether|hwaddr)\s+([\da-f:-]+)/i', $ifconfig, $m)) {
+				$hwaddr = strtolower($m[2]);
+			}
+		}
+		return array(
+			'hostname' => gethostname(),
+			'hwaddr' => $hwaddr,
+			'rootInode' => $statRoot['ino'],
+			'rootDev' => $statRoot['dev'],
+			'rootRdev' => $statRoot['rdev'],
+			'selfDev' => $statSelf['dev'],
+			'selfRdev' => $statSelf['rdev'],
+			'serverValues' => $serverValues,
+		);
+	}
+	
+	protected static function getCryptKey() {
+		$a = serialize(self::getCryptKeyComponents());
+		$b = ['', ''];
+		for ($i = strlen($a) - 1; $i >= 0; $i--) {
+			$b[$i % 2] .= sha1(chr($i) . $a[$i], true);
+		}
+		return sha1($b[0], true) . sha1($b[1], true);
+	}
+	
+	protected static function encryptBytes($data, &$type = null) {
+		$key = self::getCryptKey();
+		$data = pack('L', strlen($data)) . $data;
+		
+		if ($type === 1 || (!$type && function_exists('openssl_​encrypt'))) {
+			$type = 1;
+			// $data = openssl_encrypt($data, );
+		}
+		else if ($type === 2 || (!$type && function_exists('mcrypt_encrypt'))) {
+			$type = 2;
+			$key = substr($key, 0, 32);
+			set_error_handler(function () {});
+			$ivSize = @mcrypt_get_iv_size(MCRYPT_RIJNDAEL_128, MCRYPT_MODE_CBC);
+			$iv = mcrypt_create_iv($ivSize, MCRYPT_RAND);
+			$data = $iv . mcrypt_encrypt(MCRYPT_RIJNDAEL_128, $key, $data, MCRYPT_MODE_CBC, $iv);
+			restore_error_handler();
+		}
+		return chr($type) . $data;
+	}
+	
+	protected static function decryptBytes($data) {
+		if (!$data) {
+			throw new Exception("Unable to decrypt: data is empty");
+		}
+		$data = (string) $data;
+		$key = self::getCryptKey();
+		$type = ord($data[0]);
+		$data = substr($data, 1);
+		
+		if ($type === 1) {
+			if (!function_exists('openssl_​encrypt')) {
+				throw new Exception("Unable to decrypt: openssl_decrypt is not available");
+			}
+			// $data = openssl_encrypt($data, );
+		}
+		else if ($type === 2) {
+			$key = substr($key, 0, 32);
+			if (!function_exists('mcrypt_decrypt')) {
+				throw new Exception("Unable to decrypt: mcrypt_decrypt is not available");
+			}
+			set_error_handler(function () {});
+			$ivSize = mcrypt_get_iv_size(MCRYPT_RIJNDAEL_128, MCRYPT_MODE_CBC); // deprecated
+			$iv = substr($data, 0, $ivSize);
+			$data = substr($data, $ivSize);
+			$data = mcrypt_decrypt(MCRYPT_RIJNDAEL_128, $key, $data, MCRYPT_MODE_CBC, $iv); // deprecated
+			restore_error_handler();
+		}
+		$meta = unpack("Lsize", $data);
+		$data = substr($data, 4, $meta['size']);
+		
+		return $data;
+	}
+	
+	public static function compressBytes($data, &$type = null) {
+		$type = $type === null ? null : (int) $type;
+		
+		if ($type === 1 || (!$type && function_exists('gzcompress'))) {
+			$type = 1;
+			$data = gzcompress($data, 9);
+		}
+		
+		return chr($type) . $data;
+	}
+	
+	public static function uncompressBytes($data, &$type = null) {
+		if (!$data) {
+			throw new Exception("Unable to decompress: data is empty");
+		}
+		$data = (string) $data;
+		$type = ord($data[0]);
+		$data = substr($data, 1);
+		
+		if ($type === 1) {
+			if (!function_exists('gzuncompress')) {
+				throw new Exception("Unable to uncompress: gzuncompress is not available");
+			}
+			$data = gzuncompress($data);
+		}
+		
+		return $data;
+	}
+	
+	public static function genPublicLinkParams($dbCfg, $base, $sql, $safeRows = 1000, $encodeUtf8 = false) {
+		if (is_scalar($dbCfg)) {
+			$connections = self::getConnectionsCredentials();
+			$dbCfg = !empty($connections[$dbCfg]) ? $connections[$dbCfg] : null;
+		}
+		$params = array(
+			'dbCfg' => $dbCfg,
+			'base' => $base,
+			'sql' => $sql,
+			'safeRows' => $safeRows,
+			'encodeUtf8' => $encodeUtf8,
+		);
+		$crypt = null;
+		$params = serialize($params);
+		$params = self::compressBytes($params);
+		$params = self::encryptBytes($params, $crypt);
+		$params = base64_encode($params);
+		return $params;
+	}
+	
+	public static function invokePublic($params) {
+		if (!$params) {
+			throw new InvalidArgumentException("Parameter 'params' is empty");
+		}
+		$params = base64_decode($params);
+		if (!$params) {
+			throw new InvalidArgumentException("Parameter 'params' is assumed to be a BASE64-encoded string");
+		}
+		set_error_handler(function () {});
+		$params = self::decryptBytes($params);
+		$params = self::uncompressBytes($params);
+		$params = unserialize($params);
+		restore_error_handler();
+		if (!$params) {
+			throw new InvalidArgumentException("Parameter 'params' is broken");
+		}
+		return self::query(
+			$params['dbCfg']
+			, $params['base']
+			, $params['sql']
+			, $params['safeRows']
+			, $params['encodeUtf8']
+		);
+	}
 }
 
 class MyError extends Exception {
@@ -636,982 +812,11 @@ var SERVER = <?= json_encode(array(
 )) ?>;
 </script>
 <script src="?part=lz-string-1.4.4.js"></script>
-<script>
-
-Promise.prototype.finally = function (cb) {
-	function fin() {
-		return Promise.resolve(cb()).then(function () { return this; });
-	}
-	return this.then(fin, fin);
-};
-Promise.prototype.done = function (cb) {
-	function done() {
-		cb(arguments[0]);
-		return arguments[0];
-	}
-	return this.then(function (data) { cb(data); return data; }, function (error) { cb(error); return Promise.reject(error) });
-};
-
-function backtickEscape(s) {
-	return s.replace(backtickEscape.re, '``');
-}
-backtickEscape.re = /`/g;
-
-function quotEscape(s) {
-	return s.replace(quotEscape.re, '\\$1');
-}
-quotEscape.re = /(['"])/g;
-
-function apiCall(fn, params) {
-	var apiCallArguments = Array.prototype.slice.call(arguments, 0);
-	params = Array.prototype.slice.call(apiCallArguments, 0);
-	params.shift();
-	
-	var xhr = new XMLHttpRequest();
-	xhr.open('POST', '?api=' + encodeURIComponent(fn), true);
-	xhr.setRequestHeader('Content-Type', 'application/json');
-	
-	xhr.promise = new Promise(function (resolve, reject) {
-		xhr.onreadystatechange = function () {
-			if (xhr.readyState != 4) return;
-			var res = null;
-			
-			try {
-				res = JSON.parse(xhr.responseText);
-			} catch (e) {
-				reject(e);
-			}
-			
-			if (xhr.status == 200) {
-				resolve(res);
-			} else {
-				reject(res);
-			}
-		};
-	});
-	
-	params = params ? JSON.stringify(params) : null;
-	xhr.send(params);
-	xhr.promise.catch(function (error) {
-		switch (error.code) {
-			case 'UNKNOWN_ERROR':
-				error.message = error.message || 'Unknown error';
-			break;
-			case 'NATIVE_ERROR':
-			case 'MYSQL_CONNECT_ERROR':
-			case 'TOO_MANY_REQUESTS':
-				showError(error, true);
-			break;
-			case 'MYSQL_WRONG_CREDENTIALS':
-				return updateCredentials().then(function () {
-					refreshConnections();
-				});
-			break;
-			case 'UNDEFINED_CONNECTION':
-				return createNewConnection();
-			break;
-			default:
-				return error;
-			break;
-		}
-	});
-	
-	return xhr;
-}
-
-function promptConnection() {
-	var res = null;
-	var errors = [];
-	var s = '';
-	do {
-		s = prompt("Connection string\nlike user:password@host:port\n\nYou can omit any component, default is root:@localhost:3306)", s);
-		if (typeof s != 'string')
-			break;
-		var m = /^([^:@]*)(?::([^@]*))?(?:@([^:]*)(?::([^\/]+))?)?$/.exec(s);
-		errors = [];
-		if (!m)
-			errors.push('Please provide connection string in format:\nuser:password@host:port');
-		else {
-			res = {
-				user: m[1] || 'root',
-				pass: m[2] || '',
-				host: m[3] || 'localhost',
-				port: m[4] ? +m[4] : '',
-			};
-			if (res.port && (isNaN(res.port) || res.port % 1 || res.port <= 0 || res.port > 65535))
-				errors.push('Port should be an integer between 1 and 65535');
-		}
-		if (errors.length) {
-			errors = errors.join('\n');
-			showError(errors);
-			alert(errors);
-		}
-		else {
-			return res;
-		}
-	} while (errors.length);
-	
-	return null;
-}
-
-function promptCredentials() {
-	var res = null;
-	var error = '';
-	var connectionCfg = getConnectionCfg();
-	var user = connectionCfg.user;
-	var pass = '';
-	var server = connectionCfg.host + (connectionCfg.port ? ':' + connectionCfg.port : '');
-	do {
-		user = prompt("Username for " + server, user);
-		if (typeof user != 'string')
-			return null;
-		user = user.trim();
-		if (!user) {
-			error = 'Please provide MySQL username';
-			showError(error);
-			alert(error);
-		}
-	} while (error);
-	
-	pass = prompt("Password for " + user + '@' + server, '');
-	if (typeof pass != 'string')
-		return null;
-	
-	return {
-		user: user,
-		pass: pass,
-	};
-}
-
-function updateCredentials() {
-	var connectionId = getSelectedConnectionId();
-	var connectionCfg = JSON.parse(JSON.stringify(getConnectionCfg()));
-	var credentials = promptCredentials();
-	if (!credentials) {
-		return Promise.reject({
-			message: 'Please provide username and password',
-		});
-	}
-	connectionCfg.user = credentials.user;
-	connectionCfg.pass = credentials.pass;
-	return apiCall('saveConnection', connectionCfg, connectionId).promise;
-}
-
-function getSelectedConnectionId() {
-	var el = elConnections.querySelectorAll('option')[elConnections.selectedIndex];
-	return el && el.value !== '' ? el.value : config.connection_id;
-}
-
-function getConnectionCfg(selectedConnection) {
-	selectedConnection = selectedConnection || getSelectedConnectionId();
-	return selectedConnection ? elConnections.__connections[selectedConnection] : null;
-}
-
-function getSelectedBase() {
-	var el = elBases.querySelectorAll('option')[elBases.selectedIndex];
-	return el ? el.value : config.base;
-}
-
-function refreshConnections(selectedConnection) {
-	selectedConnection = selectedConnection || getSelectedConnectionId();
-	return apiCall('getConnections').promise.then(function (connections) {
-		elConnections.innerHTML = '';
-		elConnections.__connections = connections;
-		for (var id in connections) {
-			var connection = connections[id];
-			var option = document.createElement('option');
-			option.value = id;
-			option.textContent = !/^\d+$/.test(id) ? id : connection.user + '@' + connection.host + ':' + connection.port + ' (#' + id + ')';
-			if (id + 'z' === selectedConnection + 'z')
-				option.selected = true;
-			elConnections.appendChild(option);
-		}
-		return refreshBases();
-	});
-}
-
-function createNewConnection() {
-	return new Promise(function (resolve, reject) {
-		var newConnection = promptConnection();
-		if (!newConnection) {
-			reject({
-				message: 'Rejected',
-			});
-		}
-		else {
-			apiCall('saveConnection', newConnection).promise
-				.then(function (newConnectionId) {
-					refreshConnections(newConnectionId)
-						.then(function () {
-							return refreshBases(config.base);
-						})
-						.then(function () {
-							editor.focus();
-							return refreshTables();
-						})
-					;
-					return newConnectionId;
-				})
-				.then(resolve)
-				.catch(reject)
-			;
-		}
-	});
-}
-
-function refreshBases(selectedBase) {
-	var selectedConnection = getSelectedConnectionId();
-	selectedBase = selectedBase || getSelectedBase();
-	var sql = 'SHOW DATABASES';
-	return apiCall('query', selectedConnection, '', sql).promise.then(function (resultset) {
-		var bases = [];
-		editor.clearCompletions('base');
-		elBases.innerHTML = '';
-		elBases.__bases = bases;
-		for (var i = 0; i < resultset[0].rows.length; i++) {
-			var base = resultset[0].rows[i][0];
-			editor.addCompletion('base', base);
-			bases.push(base);
-			var option = document.createElement('option');
-			option.value = base;
-			option.textContent = base;
-			if (base + 'z' === selectedBase + 'z') {
-				option.selected = true;
-				if (!document.__originalTitle) {
-					document.__originalTitle = document.title;
-				}
-				document.title = base + ' \u2014 ' + document.__originalTitle;
-			}
-			elBases.appendChild(option);
-		}
-		return refreshTables();
-	});
-}
-
-function refreshTables() {
-	var selectedConnection = getSelectedConnectionId();
-	var selectedBase = getSelectedBase();
-	var sql = [
-		'SHOW TABLES',
-		"SELECT COLUMN_NAME FROM `information_schema`.COLUMNS WHERE TABLE_SCHEMA='" + selectedBase + "'",
-		"SELECT `ROUTINES`.ROUTINE_TYPE, `ROUTINES`.SPECIFIC_NAME, GROUP_CONCAT(CONCAT_WS(' ', `PARAMETERS`.PARAMETER_NAME, `PARAMETERS`.DATA_TYPE) ORDER BY `PARAMETERS`.ORDINAL_POSITION ASC SEPARATOR '|') FROM `information_schema`.`ROUTINES` LEFT JOIN `information_schema`.`PARAMETERS` ON (`PARAMETERS`.SPECIFIC_SCHEMA = `ROUTINES`.ROUTINE_SCHEMA AND `PARAMETERS`.SPECIFIC_NAME = `ROUTINES`.SPECIFIC_NAME AND `PARAMETERS`.ROUTINE_TYPE = `ROUTINES`.ROUTINE_TYPE) WHERE `PARAMETERS`.PARAMETER_NAME IS NOT NULL AND `ROUTINES`.ROUTINE_SCHEMA = '" + selectedBase + "' GROUP BY `PARAMETERS`.ROUTINE_TYPE, `PARAMETERS`.SPECIFIC_NAME",
-	].join(';\n');
-	return apiCall('query', selectedConnection, selectedBase, sql).promise.then(function (resultset) {
-		var tables = [];
-		editor.clearCompletions('table');
-		editor.clearCompletions('column');
-		editor.clearSnippets();
-		var currentTables = Array.prototype.slice.call(elTables.querySelectorAll('.table.current'), 0).map(function (elTable) {
-			return elTable.dataset.table;
-		});
-		elTables.innerHTML = '';
-		elTables.__tables = tables;
-		for (var i = 0; i < resultset[0].rows.length; i++) {
-			var table = resultset[0].rows[i][0];
-			editor.addCompletion('table', table);
-			tables.push(table);
-			var div = document.createElement('div');
-			div.classList.add('table');
-			if (currentTables.indexOf(table) > -1)
-				div.classList.add('current');
-			div.value = table;
-			div.dataset.table = table;
-			var a = document.createElement('a');
-			a.href = '#!exec&sql=SELECT * FROM `' + backtickEscape(table) + '`;';
-			a.textContent = table;
-			div.appendChild(a);
-			elTables.appendChild(div);
-		}
-		if (resultset[1] && resultset[1].rows.length) {
-			for (var i = 0; i < resultset[1].rows.length; i++)
-				editor.addCompletion('column', resultset[1].rows[i][0]);
-		}
-		if (resultset[2] && resultset[2].rows.length) {
-			for (var i = 0; i < resultset[2].rows.length; i++) {
-				var row = resultset[2].rows[i];
-				var type = row[0];
-				var name = row[1];
-				var params = row[2] && row[2].split('|') || [];
-				params = params.map(function (v, i) {
-					return '${' + (i+1) + ':' + v + '}';
-				});
-				var snippet = name + '(' + params.join(', ') + ')';
-				if (type.toLowerCase() == 'procedure')
-					snippet = 'CALL ' + snippet + ';';
-				editor.addSnippet(name, snippet);
-			}
-		}
-		return tables;
-	});
-}
-
-function parseSql(s) {
-	var res = [];
-	var reAny = /`|'|"/g;
-	var reClosings = {
-		'`': /(`+)/g,
-		'"': /(\\*")/g,
-		"'": /(\\*')/g,
-	};
-	var reCommented = /--+[^\r\n]*$/;
-	var m;
-	var offset = false;
-	var cap = false;
-	var cap2;
-	while (s) {
-		m = reAny.exec(s);
-		if (!m)
-			break;
-		
-		cap = m[0];
-		offset = m.index;
-		sub = s.substr(0, offset);
-		
-		if (reCommented.test(sub)) {
-			var nextLine = s.substr(offset).search(/[\r\n]/);
-			reAny.lastIndex = nextLine >= 0 ? offset + nextLine : s.length;
-			continue;
-		}
-		res.push(sub);
-		s = s.substr(offset);
-		reAny.lastIndex = 0;
-		offset = false;
-		reClosings[cap].lastIndex = cap.length;
-		while (m = reClosings[cap].exec(s)) {
-			if (m[1].length % 2 == 1) {
-				cap2 = m[1];
-				offset = m.index + cap2.length;
-				break;
-			}
-		}
-		if (offset === false) {
-			throw new Error("Unable to find matching enclosing character opened at position " + res.join('').length);
-		}
-		res.push(s.substr(0, offset));
-		s = s.substr(offset);
-	}
-	if (s)
-		res.push(s);
-	
-	var parsed = res;
-	var counter = 0;
-	var placeholders = {};
-	for (var i = 0; i < parsed.length; i += 2) {
-		var re = /(\?)|:([a-zA-Z\d_]+)/g;
-		var s = parsed[i];
-		while (m = re.exec(s)) {
-			// if (reCommented.test(s.slice(0, m.index).split(/[\r\n]/).pop()))
-			// 	continue;
-			placeholders[m[1] ? counter++ : m[2]] = true;
-		}
-	}
-	
-	return {
-		parsed: parsed,
-		placeholders: Object.keys(placeholders),
-		sql: parsed.join(''),
-	};
-}
-
-function escapeSqlString(s, quote) {
-	if (s === null)
-		return 'NULL';
-	if (typeof s == 'boolean')
-		return s ? '1' : '0';
-	if (typeof s == 'number')
-		return s.toString();
-	quote = quote || '"';
-	return quote + s.split('\\').join('\\\\').split(quote).join('\\' + quote) + quote;
-}
-
-function buildSqlStatement(statement, values) {
-	var sql = statement.parsed;
-	var counter = 0;
-	var re = /(\?)|:([a-zA-Z\d_]+)/g;
-	var reCommented = /--+[^\r\n]*$/;
-	for (var i = 0; i < sql.length; i += 2) {
-		re.lastIndex = 0;
-		sql[i] = sql[i].replace(re, function (m0, m1, m2, pos) {
-			// if (reCommented.test(sql[i].slice(0, pos).split(/[\r\n]/).pop()))
-			// 	return m0;
-			var key = m1 ? counter++ : m2;
-			return typeof values[key] != 'undefined' ? escapeSqlString(values[key]) : m0;
-		});
-	}
-	return sql.join('');
-}
-
-function executeQuery(sql, safeRows) {
-	var selectedConnection = getSelectedConnectionId();
-	var selectedBase = getSelectedBase();
-	var matches = /\b(?:(database)|(table|view))\b/i.exec(sql) || [];
-	var thenRefreshBases = !!matches[1];
-	var thenRefreshTables = !!matches[2];
-	safeRows = safeRows || config.safeRows || 100;
-	
-	function run(sql) {
-		editor.setDisabled(true);
-		for (var i = elResultset.children.length - 1; i >= 0; i--) {
-			if (!elResultset.children[i].classList.contains('pinned'))
-				elResultset.removeChild(elResultset.children[i]);
-		}
-		cleanupCurrentTables();
-		elMain.classList.add('loading');
-		return apiCall('query', selectedConnection, selectedBase, sql, safeRows, true).promise;
-	}
-	
-	return new Promise(function (resolve, reject) {
-			var statement = parseSql(sql);
-			if (!statement.placeholders.length)
-				resolve(run(sql));
-			else {
-				promptSqlValues(statement.placeholders)
-					.then(function (values) {
-						var sql = buildSqlStatement(statement, values);
-						resolve(run(sql));
-					})
-					.catch(reject)
-				;
-			}
-		})
-		.catch(function (error) {
-			showError(error, true);
-		})
-		.then(function (resultset) {
-			cleanupConsole('error');
-			
-			var rowCounts = [];
-			var elErrors = [];
-			for (var i = 0; i < resultset.length; i++) {
-				var result = resultset[i];
-				var tab = document.createElement('div');
-				tab.classList.add('tab');
-				var tabContents = document.createElement('div');
-				tabContents.classList.add('tab-contents');
-				tab.appendChild(tabContents);
-				if (result.error) {
-					elErrors.push(showError(result.error, tabContents));
-				}
-				else {
-					var table = createTableFromResult(result);
-					rowCounts.push((result.rows ? result.rows.length : 0) + (result.safeCut ? '+' : ''));
-					if (result.info) {
-						var info = document.createElement('div');
-						info.classList.add('result-info');
-						info.textContent = result.info.replace(/\s{2,}/g, '\t');
-						tabContents.appendChild(info);
-					}
-					if (table) {
-						tabContents.appendChild(table);
-						
-						var resultCtl = document.createElement('div');
-						resultCtl.classList.add('result-ctl');
-						tabContents.appendChild(resultCtl);
-						
-						var pinBtn = document.createElement('button');
-						pinBtn.innerHTML = '&#x1f4cc;';
-						pinBtn.title = 'Pin Result';
-						pinBtn.className = 'btn-pin btn-flat';
-						resultCtl.appendChild(pinBtn);
-						pinBtn.__table = table;
-						pinBtn.__tab = tab;
-						
-						var chartBtn = document.createElement('button');
-						chartBtn.innerHTML = '&#x1f4c8;';
-						chartBtn.title = 'Chart';
-						chartBtn.className = 'btn-chart btn-flat';
-						resultCtl.appendChild(chartBtn);
-						chartBtn.__table = table;
-						
-						var exportBtn = document.createElement('button');
-						exportBtn.innerHTML = '&#x1f4be;';
-						exportBtn.title = 'Export';
-						exportBtn.className = 'btn-export btn-flat';
-						resultCtl.appendChild(exportBtn);
-						exportBtn.__table = table;
-					}
-					else if (!result.info) {
-						var empty = document.createElement('div');
-						empty.classList.add('result-empty');
-						empty.textContent = 'OK';
-						tabContents.appendChild(empty);
-					}
-				}
-				elResultset.appendChild(tab);
-				if (i === 0) {
-					elResultset.scrollTop = tab.offsetTop;
-				}
-			}
-			
-			if (thenRefreshBases)
-				refreshBases();
-			else if (thenRefreshTables)
-				refreshTables();
-			
-			if (elErrors.length > 0) {
-				elResultset.scrollTo(0, elErrors[0][1].offsetTop);
-			}
-			
-			if (rowCounts.length) {
-				// showMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
-			}
-		})
-		.finally(function () {
-			editor.setDisabled(false);
-			('ontouchstart' in document.body ? elResultset : editor).focus();
-			elMain.classList.remove('loading');
-		})
-	;
-}
-
-function createTableFromResult(result) {
-	if (!result || !result.fields || !result.fields.length)
-		return null;
-	
-	const SHORTEN_LENGTH = 200;
-	var selectedBase = getSelectedBase();
-	var table = document.createElement('table');
-	table.classList.add('result');
-	table.__result = result;
-	var thead = document.createElement('thead');
-	var tbody = document.createElement('tbody');
-	var tr = document.createElement('tr');
-	var fieldsCount = result.fields.length;
-	var orgtables = {};
-	for (var x = 0; x < fieldsCount; x++) {
-		var th = document.createElement('th');
-		th.textContent = result.fields[x].name;
-		var hint = [];
-		if (result.fields[x].orgtable) {
-			orgtables[result.fields[x].orgtable] = 1;
-		}
-		if (selectedBase == result.fields[x].db && result.fields[x].orgtable) {
-			setCurrentTable(result.fields[x].orgtable);
-		}
-		if (result.fields[x].orgtable && result.fields[x].orgname) {
-			editor.addCompletion('column', result.fields[x].orgname);
-			hint.push('`'+ backtickEscape(result.fields[x].orgtable) +'`.`'+ backtickEscape(result.fields[x].orgname) +'`');
-			if (result.fields[x].name != result.fields[x].orgname)
-				hint.push('AS `' + backtickEscape(result.fields[x].name) + '`');
-		}
-		else {
-			hint.push('`' + backtickEscape(result.fields[x].name) + '`');
-		}
-		hint.push(result.fields[x].type + (result.fields[x].length ? ' (' + result.fields[x].length + ')' : ''));
-		th.title = hint.join('\n');
-		
-		tr.appendChild(th);
-	}
-	orgtables = Object.keys(orgtables);
-	table.dataset.orgtables = orgtables.join(', ');
-	
-	thead.appendChild(tr);
-	
-	if (result.safeCut) {
-		var tr = document.createElement('tr');
-		tr.classList.add('safe-cut');
-		tr.innerHTML = '<td colspan="' + fieldsCount + '">Safe cut: there are more rows (>' + result.safeRows + ')</td>';
-		tbody.appendChild(tr);
-	}
-	
-	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY|JSON)$/i;
-	var urlValueRe = /^(?:[a-z]+:|file:\/)\/\/[^\s/]+\S*$/;
-	var y = 0;
-	function appendRowsChunk() {
-		var limY = Math.min(y + 300, result.rows.length);
-		for (; y < limY; y++) {
-			tr = document.createElement('tr');
-			for (var x = 0; x < fieldsCount; x++) {
-				var value = result.rows[y][x];
-				var td = document.createElement('td');
-				var type = result.fields[x].type;
-				td.className = 'type-' + type;
-				if (value === null || (type == 'TIMESTAMP' && value === '')) {
-					td.className += ' type-NULL';
-				}
-				td.dataset.type = type;
-				td.dataset.x = x;
-				td.dataset.y = y;
-				td.dataset.name = result.fields[x].name;
-				td.__value = value;
-				if (value && bigValuesRe.test(type) && value.length > (SHORTEN_LENGTH + 3)) {
-					value = value.substr(0, SHORTEN_LENGTH);
-					td.className += ' value-shortened';
-				}
-				td.textContent = value;
-				if (urlValueRe.test(value)) {
-					var a = document.createElement('a');
-					a.className = 'value-link';
-					a.href = value;
-					a.target = '_blank';
-					td.insertBefore(a, td.firstChild);
-				}
-				tr.appendChild(td);
-			}
-			tbody.appendChild(tr);
-		}
-		
-		if (limY < result.rows.length) {
-			setTimeout(appendRowsChunk, 10);
-		}
-	}
-	
-	if (!result.rows.length) {
-		var tr = document.createElement('tr');
-		tr.classList.add('empty');
-		tr.innerHTML = '<td colspan="' + fieldsCount + '">Empty result</td>';
-		tbody.appendChild(tr);
-	}
-	else {
-		appendRowsChunk();
-	}
-	table.appendChild(thead);
-	table.appendChild(tbody);
-	return table;
-}
-
-// https://stackoverflow.com/a/6969486
-function escapeRegExp(str) {
-	return str.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
-}
-
-function setCookie(name, value) {
-	var expires = new Date();
-	expires.setFullYear(expires.getFullYear() + (value !== null ? 1 : -1));
-	return document.cookie = [
-		encodeURIComponent(name.trim()) + '=' + encodeURIComponent(value),
-		// 'path=',
-		'expires=' + expires.toUTCString(),
-	].join('; ');
-}
-
-function getCookie(name, defaultValue) {
-	name = encodeURIComponent((name + '').trim());
-	var re = new RegExp('\b' + name + '=([^;]*)');
-	var res = re.exec(document.cookie);
-	return res ? decodeURIComponent(res[1]) : defaultValue;
-}
-
-function cleanupCurrentTables() {
-	var currentTables = elTables.querySelectorAll('.table.current');
-	for (var i = 0; i < currentTables.length; i++) {
-		currentTables[i].classList.remove('current');
-	}
-	return currentTables;
-}
-
-function setCurrentTable(table) {
-	var elTable = elTables.querySelector('.table[data-table="' + table + '"]');
-	if (elTable)
-		elTable.classList.add('current');
-	return elTable;
-}
-
-var refreshStatXhr;
-function refreshStat() {
-	var selectedConnection = getSelectedConnectionId();
-	if (!selectedConnection) {
-		return Promise.reject({
-			code: 'UNDEFINED_CONNECTION',
-			message: 'Create connection first',
-		});
-	}
-	if (refreshStatXhr)
-		refreshStatXhr.abort();
-	refreshStatXhr = apiCall('stat', selectedConnection, true);
-	return refreshStatXhr.promise
-		.then(function (result) {
-			elStat.textContent = result.stat.join('\n');
-			elStat.innerHTML = '<span>' + elStat.innerHTML.split('\n').join('</span>\n<span>') + '</span>';
-			elStatProcesslist.innerHTML = '';
-			elStatProcesslist.appendChild(createTableFromResult(result.processlist));
-			return result;
-		})
-		.catch(function (error) {
-			// pass
-		})
-	;
-}
-
-function cleanupConsole(className) {
-	var messages = elConsole.querySelectorAll('.message' + (className ? '.' + className : ''));
-	for (var i = 0; i < messages.length; i++) {
-		messages[i].parentElement.removeChild(messages[i]);
-	}
-	return messages.length;
-}
-
-function showMessage(content, className, cleanup) {
-	var message = document.createElement('div');
-	message.className = ('message ' + (className || '')).trim();
-	var close = document.createElement('span');
-	close.classList.add('btn-close');
-	message.appendChild(close);
-	var container = document.createElement('div');
-	container.classList.add('message-container');
-	if (content instanceof HTMLElement)
-		container.appendChild(content);
-	else
-		container.textContent = content + '';
-	message.appendChild(container);
-	var scrollToEnd = elConsole.scrollHeight && elConsole.scrollTop >= (elConsole.scrollHeight - elConsole.offsetHeight - 5);
-	if (cleanup) {
-		cleanupConsole(className);
-	}
-	elConsole.appendChild(message);
-	if (scrollToEnd) {
-		elConsole.scrollTop = elConsole.scrollHeight;
-	}
-	return message;
-}
-
-function showError(error, duplicate) {
-	var content = document.createElement('div');
-	if (typeof error == 'string') {
-		error = {
-			message: error,
-		};
-	}
-	if (error.code) {
-		var code = document.createElement('span');
-		code.textContent = error.code;
-		code.classList.add('error-code');
-		content.appendChild(code);
-	}
-	if (error.message) {
-		var message = document.createElement('span');
-		message.textContent = error.message;
-		message.classList.add('error-message');
-		content.appendChild(message);
-	}
-	if (error.file) {
-		var link = '';
-		var file = document.createElement('div');
-		file.textContent = error.file;
-		var match = new RegExp(SERVER.file + ':(\\d+)$').exec(error.file);
-		if (match) {
-			file.innerHTML = '<a href="?source#L' + match[1] + '" target="_blank">' + file.innerHTML + '</a>';
-		}
-		file.classList.add('error-file');
-		content.appendChild(file);
-	}
-	if (!content.children.length)
-		return null;
-	
-	var errorMessage = showMessage(content, 'error');
-	
-	if (duplicate) {
-		if (!(duplicate instanceof HTMLElement)) {
-			var tab = document.createElement('div');
-			tab.classList.add('tab');
-			var tabContents = document.createElement('div');
-			tabContents.classList.add('tab-contents');
-			tab.appendChild(tabContents);
-			elResultset.appendChild(tab);
-			duplicate = tabContents;
-		}
-		errorMessageDup = errorMessage.cloneNode(true);
-		duplicate.appendChild(errorMessageDup);
-		return [
-			errorMessage,
-			errorMessageDup,
-		];
-	}
-	else {
-		return [errorMessage];
-	}
-}
-
-var locationParams = new (function () {
-	var LZS = 'Z~'; // marker
-	var TRUE_VALUE = '1';
-	var FALSE_VALUE = '';
-	this.encodeValue = function (value) {
-		if (typeof value === 'boolean' || value === null || typeof value === 'undefined')
-			return value ? TRUE_VALUE : FALSE_VALUE; // omit encodeURIComponent
-		value = value.toString();
-		if (value.length > 500 || value.slice(0, LZS.length) === LZS) {
-			value = LZS + LZString144.compressToBase64(value);
-		}
-		return encodeURIComponent(value);
-	};
-	this.decodeValue = function (value) {
-		if (typeof value === 'boolean' || value === null || typeof value === 'undefined')
-			return value ? TRUE_VALUE : FALSE_VALUE;
-		value = decodeURIComponent(value.toString());
-		if (value.slice(0, LZS.length) === LZS) {
-			value = LZString144.decompressFromBase64(value.slice(LZS.length));
-		}
-		return value;
-	};
-	this.getPairs = function () {
-		if (!/^#!/.test(document.location.hash)) {
-			return null;
-		}
-		return document.location.hash.slice(2).split('&');
-	};
-	this.getAll = function () {
-		var pairs = this.getPairs();
-		var res = {};
-		if (!pairs) {
-			return res;
-		}
-		var eqIndex = -1;
-		var pair;
-		for (var i = pairs.length - 1; i >= 0; i--) {
-			eqIndex = pairs[i].indexOf('=');
-			if (eqIndex < 0) {
-				res[decodeURIComponent(pairs[i])] = TRUE_VALUE;
-			}
-			else {
-				res[decodeURIComponent(pairs[i].slice(0, eqIndex))] = this.decodeValue(pairs[i].slice(eqIndex + 1));
-			}
-		}
-		return res;
-	};
-	this.get = function (name) {
-		var pairs = this.getPairs();
-		if (!pairs) {
-			return null;
-		}
-		name = encodeURIComponent(name);
-		var nameEq = name + '=';
-		for (var i = pairs.length - 1; i >= 0; i--) {
-			if (pairs[i] === name) {
-				return TRUE_VALUE;
-			}
-			else if (pairs[i].slice(0, nameEq.length) === nameEq) {
-				return this.decodeValue(pairs[i].slice(nameEq.length));
-			}
-		}
-		return null;
-	};
-	this.set = function (name, value) {
-		var pairs = this.getPairs() || [];
-		name = encodeURIComponent(name);
-		value = this.encodeValue(value);
-		var nameEq = name + '=';
-		var replaced = false;
-		for (var i = pairs.length - 1; i >= 0; i--) {
-			if (pairs[i] === name || pairs[i].slice(0, nameEq.length) === nameEq) {
-				if (replaced) {
-					pairs.splice(i, 1);
-				}
-				else {
-					replaced = true;
-					pairs[i] = nameEq + value;
-				}
-			}
-		}
-		if (!replaced) {
-			pairs.push(nameEq + value);
-		}
-		document.location.replace('#!' + pairs.join('&'));
-		return this;
-	};
-	this.del = function (name) {
-		var pairs = this.getPairs();
-		if (!pairs) {
-			return false;
-		}
-		name = encodeURIComponent(name);
-		var nameEq = name + '=';
-		var counter = 0;
-		for (var i = pairs.length - 1; i >= 0; i--) {
-			if (pairs[i] === name || pairs[i].slice(0, nameEq.length) === nameEq) {
-				pairs.splice(i, 1);
-				counter++;
-			}
-		}
-		if (counter > 0) {
-			document.location.replace('#!' + pairs.join('&'));
-		}
-		return counter;
-	};
-})();
-
-
-// Custom Ace completer:
-function SQLNamesCompleter(tag) {
-	Object.defineProperties(this, {
-		tag: {
-			value: tag,
-		},
-		clear: {
-			value: function () {
-				this.splice(0, this.length);
-			},
-		},
-		getCompletions: {
-			value: function (editor, session, pos, prefix, callback) {
-				callback(null, this.map(function (word) {
-					return {
-						caption: word,
-						value: word,
-						score: 0,
-						meta: tag
-					};
-				}));
-			},
-		},
-	});
-}
-SQLNamesCompleter.prototype = Object.create(Array.prototype);
-SQLNamesCompleter.prototype.constructor = SQLNamesCompleter;
-
-var config = new (function LocalConfig() {
-	var prefix = 'mymi_';
-	var _this = this;
-	var types = {};
-	
-	function setType(value, type) {
-		if (typeof value == type)
-			return value;
-		else if (type == 'string')
-			return value + '';
-		else if (type == 'boolean')
-			return /^(true|1|on)$/i.test(value);
-		else if (type == 'number')
-			return parseFloat(value) || +value;
-		else if (type == 'array')
-			return typeof value == 'string' ? value.split(';') : [].concat(value);
-		else if (type == 'object')
-			return typeof value == 'string' ? JSON.parse(value) : null;
-		throw "Incompatible type '" + type + "'";
-	}
-	
-	this.connection_id = '';
-	this.base = '';
-	this.query = '';
-	this.splitter_elMain = 0;
-	this.enableSnippets = true;
-	this.enableLiveAutocompletion = true;
-	this.safeRows = 100;
-	
-	for (var k in this) {
-		(function (k, defaultValue) {
-			Object.defineProperty(_this, k, {
-				enumerable: true,
-				get: function () {
-					if (!types[k])
-						types[k] = typeof defaultValue == 'object' ? (defaultValue instanceof Array ? 'array' : 'object') : typeof defaultValue;
-					var value = localStorage.getItem(prefix + k);
-					return setType(value === null ? defaultValue : value, types[k]);
-				},
-				set: function (value) {
-					if (typeof value == 'object')
-						value = value instanceof Array ? value.join(';') : JSON.stringify(value);
-					localStorage.setItem(prefix + k, value);
-				},
-			});
-		})(k, this[k]);
-	}
-})();
-
-</script>
+<script src="?part=common.js"></script>
 <link rel="stylesheet" href="?part=style.css">
 </head>
 <body>
+<script src="?part=modal.js"></script>
 <div id="elWrapper" class="flex-col">
 	<div id="elMainContainer" class="flex-row flex-1-auto">
 		<aside id="elAside" class="flex-1-auto flex-col">
@@ -1801,116 +1006,6 @@ var config = new (function LocalConfig() {
 	
 	</script>
 </div>
-<div id="elModalBlobValue" class="modal">
-	<h2 id="elModalBlobValueTitle"></h2>
-	<div class="m-b">
-		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,256" checked>Raw</label>
-		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,16">Hex</label>
-		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,2">Binary</label>
-		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="json">JSON</label>
-		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="php">PHP</label>
-	</div>
-	<div id="elBlobValueView" autofocus tabindex="0"></div>
-	<script src="?part=create-dir-element.js"></script>
-	<script src="?part=php-unserialize.js"></script>
-	<script>
-	
-	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueView) {
-		var bigValuesRe = /(BLOB|STRING|GEOMETRY|JSON)$/i;
-		var intValuesRe = /(CHAR|INT|LONG)$/i;
-		
-		function encode(value, type, base) {
-			if (base == 256) {
-				elBlobValueView.textContent = value;
-				return;
-			}
-			var chunkSize = Math.ceil(8 / Math.log2(base));
-			var fill = new Array(chunkSize).fill('0').join('');
-			var decoded = [];
-			
-			if (intValuesRe.test(type)) {
-				return; // TODO: convert int64
-			}
-			else if (typeof value === 'string') {
-				for (var i = 0; i < value.length; i++) {
-					decoded.push((fill + value.charCodeAt(i).toString(base)).slice(-chunkSize));
-				}
-			}
-			else {
-				return;
-			}
-			elBlobValueView.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
-		}
-		
-		function showValue(value, type, name) {
-			var elDefMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="data,256"]');
-			var elJsonMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="json"]');
-			var elPhpMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="php"]');
-			var elMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"]:checked');
-			elJsonMode.disabled = !/^\s*(\[|\{|-?\d+|")/.test(value); // looks like json
-			elPhpMode.disabled = !/^(N;|[bbidsaO]:)/.test(value); // looks like php
-			if (elMode.disabled) {
-				elMode.checked = false;
-				elDefMode.checked = true;
-				return showValue(value, type, name);
-			}
-			var mode = elMode.value;
-			if (mode === 'json' || mode === 'php') {
-				elBlobValueView.removeAttribute('contenteditable');
-				elBlobValueView.textContent = '';
-				var o = null;
-				try {
-					if (mode === 'php')
-						o = phpUnserialize(value);
-					else
-						o = JSON.parse(value);
-				}
-				catch (e) {
-					o = e;
-				}
-				elBlobValueView.appendChild(createDirElement(o, null, null, 1));
-			}
-			else {
-				var base = +mode.split(',')[1];
-				elBlobValueView.setAttribute('contenteditable', 'true');
-				encode(value, type, base);
-			}
-		}
-		
-		elResultset.addEventListener('click', function (event) {
-			if (!event.ctrlKey || !bigValuesRe.test(event.target.dataset.type))
-				return;
-			var td = event.target;
-			elModalBlobValue.__td = td;
-			
-			elModalBlobValueTitle.textContent = td.dataset.name + ' (' + td.dataset.type + ')';
-			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
-			
-			Modal.show(elModalBlobValue);
-		});
-		
-		elModalBlobValue.addEventListener('change', function (event) {
-			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
-		});
-		
-		elBlobValueView.addEventListener('keydown', function (event) {
-			if (event.ctrlKey) {
-				if (event.keyCode === 86 || event.keyCode === 88) { // ctrl+x, ctrl+v
-					event.preventDefault();
-					return false;
-				}
-				return true;
-			}
-			// keycode: http://www.programming-magic.com/file/20080205232140/keycode_table.html
-			if (33 <= event.keyCode && event.keyCode <= 40)
-				return true;
-			event.preventDefault();
-			return false;
-		});
-	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueView);
-	
-	</script>
-</div>
 <div id="elModalSqlValues" class="modal modal-full">
 	<span class="modal-close"></span>
 	<h2>SQL values</h2>
@@ -1993,354 +1088,13 @@ var config = new (function LocalConfig() {
 	
 	</script>
 </div>
-<div id="elModalChart" class="modal modal-full">
-	<span class="modal-close"></span>
-	<h2>Chart</h2>
-	<div class="m-t">X-axis: <select id="elChartXCol"></select></div>
-	<div class="m-t">Y-axis: <span id="elChartYCols"></span></div>
-	<div class="m-t" id="elChartContainer"></div>
-	<div class="m-t" id="elChartInfoContainer">
-		<div class="m-t" id="elChartInfoOffset"></div>
-		<div class="m-t" id="elChartInfo"></div>
-	</div>
-	<style>
-	#elModalChart > h2 {
-		margin-top: 0;
-	}
-	#elChartContainer > .tinychart {
-		width: 100%;
-		height: 16em;
-		max-height: 50vh;
-	}
-	#elChartInfoContainer {
-		display: flex;
-		overflow: hidden;
-	}
-	#elChartInfo h4 {
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	#elChartInfo > div {
-		position: relative;
-		line-height: 1.4em;
-		height: 1.4em;
-		transition: top 0.1s ease;
-	}
-	#elChartInfo > div:before {
-		content: attr(data-label);
-		white-space: nowrap;
-		position: absolute;
-		right: 100%;
-		margin-right: 0.35em;
-		opacity: 0.65;
-		filter: grayscale(0.75);
-	}
-	#elChartInfo > div:empty:before {
-		opacity: 0.25;
-	}
-	
-	</style>
-	<script src="?part=tinychart.js"></script>
-	<script>
-	
-	(function (context, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfoOffset, elChartInfo) {
-		var stringTypes = ['ENUM','SET','VAR_STRING','STRING'];
-		var numberTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
-		var dateTypes = ['TIMESTAMP','DATE','TIME','DATETIME','NEWDATE'];
-		var availXTypes = [].concat(stringTypes).concat(numberTypes).concat(dateTypes);
-		var availYTypes = [].concat(numberTypes);
-		
-		context.showChart = function (result) {
-			while (elChartXCol.children.length)
-				elChartXCol.removeChild(elChartXCol.children[0]);
-			while (elChartYCols.childNodes.length)
-				elChartYCols.removeChild(elChartYCols.childNodes[0]);
-			var yChecked = false;
-			for (var i = 0; i < result.fields.length; i++) {
-				var type = result.fields[i].type;
-				
-				if (availXTypes.indexOf(type) > -1) {
-					var elOption = document.createElement('option');
-					elOption.value = i;
-					elOption.textContent = elOption.innerText = result.fields[i].name;
-					elChartXCol.appendChild(elOption);
-				}
-				if (availYTypes.indexOf(type) > -1) {
-					var elLabel = document.createElement('label');
-					elChartYCols.appendChild(elLabel);
-					elChartYCols.appendChild(document.createTextNode(" "));
-					elLabel.textContent = elLabel.innerText = result.fields[i].name;
-					elLabel.className = 'm-r nowrap';
-					var elCheckbox = document.createElement('input');
-					elLabel.insertBefore(elCheckbox, elLabel.firstChild);
-					elCheckbox.type = 'checkbox';
-					elCheckbox.value = i;
-					elCheckbox.dataset.label = result.fields[i].name;
-					if (!yChecked && i != elChartXCol.value) {
-						elCheckbox.checked = yChecked = true;
-					}
-				}
-			}
-			
-			var chart;
-			
-			function redraw() {
-				if (!chart)
-					chart = new Tinychart(elChartContainer);
-				
-				var xCol = +elChartXCol.value;
-				var xType = result.fields[xCol].type;
-				var xTypeIsDate = dateTypes.indexOf(xType) > -1;
-				for (var i = 0; i < elChartYCols.children.length; i++) {
-					elChartYCols.children[i].style.color = '';
-				}
-				var yCheckedInputs = Array.prototype.slice.call(elChartYCols.querySelectorAll('input:checked'), 0);
-				var yCols = yCheckedInputs.map(function (v, i) {
-					return +v.value;
-				});
-				var data = [];
-				
-				for (var i = 0; i < result.rows.length; i++) {
-					var item = [];
-					var x = result.rows[i][xCol];
-					if (xTypeIsDate) {
-						x = new Date((x + ' 00:00:00').split(' ', 2).join('T') + 'Z');
-					}
-					item[0] = x;
-					
-					for (var j = 0; j < yCols.length; j++)
-						item[j + 1] = result.rows[i][yCols[j]];
-					
-					data.push(item);
-				}
-				
-				chart.setData(data);
-				for (var i = 0; i < yCheckedInputs.length; i++) {
-					yCheckedInputs[i].parentElement.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
-				}
-				chart._labels = yCheckedInputs.map(function (v, i) {
-					return v.dataset.label;
-				});
-			}
-			
-			function redrawChartInfo(hoveredItem) {
-				if (!elChartInfo.__h4) {
-					elChartInfo.__h4 = document.createElement('h4');
-					elChartInfo.insertBefore(elChartInfo.__h4, elChartInfo.children[0]);
-				}
-				elChartInfo.__h4.textContent = hoveredItem.x instanceof Date && hoveredItem.x.toISOString
-					? hoveredItem.x.toISOString().replace(/^(.+)T(.+)(?:\.\d*)Z$/, '$1 $2')
-					: hoveredItem.x;
-				while (elChartInfo.children.length > hoveredItem.y.length + 1) {
-					elChartInfo.removeChild(elChartInfo.children[1]);
-				}
-				
-				var sortedVals = hoveredItem.y.map(function (v, i) {
-					return [i, v];
-				});
-				sortedVals.sort(function (a, b) {
-					return b[1] - a[1] || a[0] - b[0];
-				});
-				var offsets = [];
-				for (var i = sortedVals.length - 1; i >= 0; i--) {
-					offsets[sortedVals[i][0]] = i - sortedVals[i][0];
-				}
-				var height = null;
-				
-				for (var i = 0; i < hoveredItem.y.length; i++) {
-					var el = elChartInfo.children[i + 1];
-					if (!el) {
-						el = document.createElement('div');
-						elChartInfo.appendChild(el);
-					}
-					if (height === null) {
-						height = el.clientHeight;
-					}
-					el.dataset.label = chart._labels[i];
-					el.textContent = typeof hoveredItem.y[i] !== 'undefined' ? hoveredItem.y[i] : '';
-					el.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
-					el.style.top = offsets[i] * height + 'px';
-				}
-			}
-			
-			var prevHoveredItemIndex = -1;
-			var tmrRedrawChartInfo;
-			function onChartContainerEvent(event) {
-				if (event.type == 'hovervalue') {
-					var val = event.detail;
-					if (prevHoveredItemIndex < 0) {
-						prevHoveredItemIndex = val.index;
-						redrawChartInfo(val);
-					}
-					else if (prevHoveredItemIndex !== val.index) {
-						clearTimeout(tmrRedrawChartInfo);
-						prevHoveredItemIndex = val.index;
-						tmrRedrawChartInfo = setTimeout(redrawChartInfo.bind(null, val), 50);
-					}
-				}
-				else if (event.type == 'mousemove' && event.currentTarget == elChartContainer) {
-					var x = event.offsetX / elChartContainer.clientWidth;
-					elChartInfoOffset.style.flexBasis = Math.min(1, x) * 100 + '%';
-				}
-			}
-			function onModalEvent(event) {
-				if (event.type == 'change') {
-					redraw();
-				}
-				else if (event.type == 'modal-hide') {
-					prevHoveredItemIndex = -1;
-					delete elChartInfo.__h4;
-					while (elChartInfo.children.length) {
-						elChartInfo.removeChild(elChartInfo.children[0]);
-					}
-					elModalChart.removeEventListener('change', onModalEvent);
-					elModalChart.removeEventListener('modal-hide', onModalEvent);
-					elChartContainer.removeEventListener('hovervalue', onChartContainerEvent);
-					elChartContainer.removeEventListener('mousemove', onChartContainerEvent);
-					if (chart) {
-						chart.remove();
-					}
-				}
-			}
-			
-			elModalChart.addEventListener('change', onModalEvent);
-			elModalChart.addEventListener('modal-hide', onModalEvent);
-			elChartContainer.addEventListener('hovervalue', onChartContainerEvent);
-			elChartContainer.addEventListener('mousemove', onChartContainerEvent);
-			
-			Modal.show(elModalChart);
-			redraw();
-		};
-		
-		elResultset.addEventListener('click', function (event) {
-			if (!event.target.classList.contains('btn-chart'))
-				return;
-			var result = event.target.__table.__result;
-			context.showChart(result);
-		});
-		
-	})(this, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfoOffset, elChartInfo);
-	
-	</script>
-</div>
 
-<div id="elModalExport" class="modal modal-full">
-	<span class="modal-close"></span>
-	<h2>Export</h2>
-	<div class="m-t">Columns: <span id="elExportCols"></span></div>
-	<textarea class="m-t" id="elExportResult" readonly></textarea>
-	<style>
-	#elModalExport > h2 {
-		margin-top: 0;
-	}
-	#elExportResult {
-		display: block;
-		width: 100%;
-		resize: vertical;
-		height: 10em;
-		font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
-	}
-	</style>
-	<script>
-	
-	(function (context, elModalExport, elExportCols, elExportResult) {
-		var unquotedTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
-		context.showExport = function (result) {
-			while (elExportCols.children.length)
-				elExportCols.removeChild(elExportCols.children[0]);
-			elExportResult.value = '';
-			
-			for (var i = 0; i < result.fields.length; i++) {
-				var elLabel = document.createElement('label');
-				elLabel.textContent = elLabel.innerText = result.fields[i].name;
-				elLabel.className = 'm-r nowrap';
-				var elCheckbox = document.createElement('input');
-				elLabel.insertBefore(elCheckbox, elLabel.firstChild);
-				elCheckbox.type = 'checkbox';
-				elCheckbox.value = i;
-				elCheckbox.title = result.fields[i].name;
-				elCheckbox.checked = true;
-				elExportCols.appendChild(elLabel);
-				elExportCols.appendChild(document.createTextNode('\n'));
-			}
-			
-			function redraw() {
-				elExportResult.value = '';
-				var checkedColsNames = [];
-				var checkedCols = Array.prototype.slice.call(elExportCols.querySelectorAll('input:checked'), 0);
-				var quotedCols = {};
-				var tables = [];
-				checkedCols = checkedCols.map(function (v, i) {
-					var col = +v.value
-					var colName = '' + v.title;
-					quotedCols[col] = unquotedTypes.indexOf(result.fields[col].type) < 0;
-					colName = '`' + backtickEscape(colName) + '`';
-					checkedColsNames.push(colName);
-					var table = result.fields[col].orgtable;
-					if (tables.indexOf(table) < 0)
-						tables.push(table);
-					return col;
-				});
-				var table = tables.length != 1 ? '??' : '`' + backtickEscape(tables[0]) + '`';
-				
-				if (!checkedCols.length)
-					return;
-				
-				var lines = [];
-				var i, x, y, v, quoteValue;
-				for (i = 0; i < checkedCols.length; i++) {
-					x = checkedCols[i];
-					quoteValue = quotedCols[x];
-					for (y = 0; y < result.rows.length; y++) {
-						v = result.rows[y][x];
-						if (v === null)
-							v = 'null';
-						else if (quoteValue)
-							v = '"' + ('' + v).replace(/"/g, '""') + '"';
-						
-						if (!lines[y])
-							lines[y] = [];
-						lines[y][i] = v;
-					}
-				}
-				
-				lines = lines.map(function (line) {
-					return '(' + line.join(', ') + ')';
-				});
-				
-				elExportResult.value =
-					'INSERT INTO ' + table + '\n'
-					+ '(' + checkedColsNames.join(', ') + ')\n'
-					+ 'VALUES\n'
-					+ lines.join(',\n') + ';'
-				;
-			}
-			
-			function onModalEvent(event) {
-				if (event.type == 'change') {
-					redraw();
-				}
-			}
-			
-			elModalExport.addEventListener('change', onModalEvent);
-			
-			Modal.show(elModalExport);
-			redraw();
-		};
-		
-		elResultset.addEventListener('click', function (event) {
-			if (!event.target.classList.contains('btn-export'))
-				return;
-			var result = event.target.__table.__result;
-			context.showExport(result);
-		});
-		
-	})(this, elModalExport, elExportCols, elExportResult);
-	
-	</script>
-</div>
-<script src="?part=modal.js"></script>
+<?= (new MultipartFile())->getChunk('plugin-blob-value.html.inc')[1] ?>
+
+<?= (new MultipartFile())->getChunk('plugin-chart.html.inc')[1] ?>
+
+<?= (new MultipartFile())->getChunk('plugin-export.html.inc')[1] ?>
+
 <script src="?part=ace-sql-twilight.js"></script>
 <script src="?part=ace-sql-snippets.js"></script>
 <script>
@@ -4705,3 +3459,1544 @@ button.narrow,
 }
 
 /* </style> */
+
+-- ################################################################################################
+
+Name: common.js
+Content-Type: application/javascript; charset="utf-8"
+
+// <script>
+
+Promise.prototype.finally = function (cb) {
+	function fin() {
+		return Promise.resolve(cb()).then(function () { return this; });
+	}
+	return this.then(fin, fin);
+};
+Promise.prototype.done = function (cb) {
+	function done() {
+		cb(arguments[0]);
+		return arguments[0];
+	}
+	return this.then(function (data) { cb(data); return data; }, function (error) { cb(error); return Promise.reject(error) });
+};
+
+function setTitle(title) {
+	if (!document.__originalTitle) {
+		document.__originalTitle = document.title;
+	}
+	title = (title + '').trim();
+	document.title = (title ? title + ' \u2014 ' : '') + document.__originalTitle;
+}
+
+function backtickEscape(s) {
+	return s.replace(backtickEscape.re, '``');
+}
+backtickEscape.re = /`/g;
+
+function quotEscape(s) {
+	return s.replace(quotEscape.re, '\\$1');
+}
+quotEscape.re = /(['"])/g;
+
+function apiCall(fn, params) {
+	var apiCallArguments = Array.prototype.slice.call(arguments, 0);
+	params = Array.prototype.slice.call(apiCallArguments, 0);
+	params.shift();
+	
+	var xhr = new XMLHttpRequest();
+	xhr.open('POST', '?api=' + encodeURIComponent(fn), true);
+	xhr.setRequestHeader('Content-Type', 'application/json');
+	
+	xhr.promise = new Promise(function (resolve, reject) {
+		xhr.onreadystatechange = function () {
+			if (xhr.readyState != 4) return;
+			var res = null;
+			
+			try {
+				res = JSON.parse(xhr.responseText);
+			} catch (e) {
+				reject(e);
+			}
+			
+			if (xhr.status == 200) {
+				resolve(res);
+			} else {
+				reject(res);
+			}
+		};
+	});
+	
+	params = params ? JSON.stringify(params) : null;
+	xhr.send(params);
+	xhr.promise.catch(function (error) {
+		switch (error.code) {
+			case 'UNKNOWN_ERROR':
+				error.message = error.message || 'Unknown error';
+			break;
+			case 'NATIVE_ERROR':
+			case 'MYSQL_CONNECT_ERROR':
+			case 'TOO_MANY_REQUESTS':
+				showError(error, true);
+			break;
+			case 'MYSQL_WRONG_CREDENTIALS':
+				return updateCredentials().then(function () {
+					refreshConnections();
+				});
+			break;
+			case 'UNDEFINED_CONNECTION':
+				return createNewConnection();
+			break;
+			default:
+				return error;
+			break;
+		}
+	});
+	
+	return xhr;
+}
+
+function promptConnection() {
+	var res = null;
+	var errors = [];
+	var s = '';
+	do {
+		s = prompt("Connection string\nlike user:password@host:port\n\nYou can omit any component, default is root:@localhost:3306)", s);
+		if (typeof s != 'string')
+			break;
+		var m = /^([^:@]*)(?::([^@]*))?(?:@([^:]*)(?::([^\/]+))?)?$/.exec(s);
+		errors = [];
+		if (!m)
+			errors.push('Please provide connection string in format:\nuser:password@host:port');
+		else {
+			res = {
+				user: m[1] || 'root',
+				pass: m[2] || '',
+				host: m[3] || 'localhost',
+				port: m[4] ? +m[4] : '',
+			};
+			if (res.port && (isNaN(res.port) || res.port % 1 || res.port <= 0 || res.port > 65535))
+				errors.push('Port should be an integer between 1 and 65535');
+		}
+		if (errors.length) {
+			errors = errors.join('\n');
+			showError(errors);
+			alert(errors);
+		}
+		else {
+			return res;
+		}
+	} while (errors.length);
+	
+	return null;
+}
+
+function promptCredentials() {
+	var res = null;
+	var error = '';
+	var connectionCfg = getConnectionCfg();
+	var user = connectionCfg.user;
+	var pass = '';
+	var server = connectionCfg.host + (connectionCfg.port ? ':' + connectionCfg.port : '');
+	do {
+		user = prompt("Username for " + server, user);
+		if (typeof user != 'string')
+			return null;
+		user = user.trim();
+		if (!user) {
+			error = 'Please provide MySQL username';
+			showError(error);
+			alert(error);
+		}
+	} while (error);
+	
+	pass = prompt("Password for " + user + '@' + server, '');
+	if (typeof pass != 'string')
+		return null;
+	
+	return {
+		user: user,
+		pass: pass,
+	};
+}
+
+function updateCredentials() {
+	var connectionId = getSelectedConnectionId();
+	var connectionCfg = JSON.parse(JSON.stringify(getConnectionCfg()));
+	var credentials = promptCredentials();
+	if (!credentials) {
+		return Promise.reject({
+			message: 'Please provide username and password',
+		});
+	}
+	connectionCfg.user = credentials.user;
+	connectionCfg.pass = credentials.pass;
+	return apiCall('saveConnection', connectionCfg, connectionId).promise;
+}
+
+function getSelectedConnectionId() {
+	var el = elConnections.querySelectorAll('option')[elConnections.selectedIndex];
+	return el && el.value !== '' ? el.value : config.connection_id;
+}
+
+function getConnectionCfg(selectedConnection) {
+	selectedConnection = selectedConnection || getSelectedConnectionId();
+	return selectedConnection ? elConnections.__connections[selectedConnection] : null;
+}
+
+function getSelectedBase() {
+	if (typeof elBases === 'undefined') {
+		return null;
+	}
+	var el = elBases.querySelectorAll('option')[elBases.selectedIndex];
+	return el ? el.value : config.base;
+}
+
+function refreshConnections(selectedConnection) {
+	selectedConnection = selectedConnection || getSelectedConnectionId();
+	return apiCall('getConnections').promise.then(function (connections) {
+		elConnections.innerHTML = '';
+		elConnections.__connections = connections;
+		for (var id in connections) {
+			var connection = connections[id];
+			var option = document.createElement('option');
+			option.value = id;
+			option.textContent = !/^\d+$/.test(id) ? id : connection.user + '@' + connection.host + ':' + connection.port + ' (#' + id + ')';
+			if (id + 'z' === selectedConnection + 'z')
+				option.selected = true;
+			elConnections.appendChild(option);
+		}
+		return refreshBases();
+	});
+}
+
+function createNewConnection() {
+	return new Promise(function (resolve, reject) {
+		var newConnection = promptConnection();
+		if (!newConnection) {
+			reject({
+				message: 'Rejected',
+			});
+		}
+		else {
+			apiCall('saveConnection', newConnection).promise
+				.then(function (newConnectionId) {
+					refreshConnections(newConnectionId)
+						.then(function () {
+							return refreshBases(config.base);
+						})
+						.then(function () {
+							editor.focus();
+							return refreshTables();
+						})
+					;
+					return newConnectionId;
+				})
+				.then(resolve)
+				.catch(reject)
+			;
+		}
+	});
+}
+
+function refreshBases(selectedBase) {
+	var selectedConnection = getSelectedConnectionId();
+	selectedBase = selectedBase || getSelectedBase();
+	var sql = 'SHOW DATABASES';
+	return apiCall('query', selectedConnection, '', sql).promise.then(function (resultset) {
+		var bases = [];
+		var actuallySelectedBase = '';
+		editor.clearCompletions('base');
+		elBases.innerHTML = '';
+		elBases.__bases = bases;
+		for (var i = 0; i < resultset[0].rows.length; i++) {
+			var base = resultset[0].rows[i][0];
+			editor.addCompletion('base', base);
+			bases.push(base);
+			var option = document.createElement('option');
+			option.value = base;
+			option.textContent = base;
+			if (base + 'z' === selectedBase + 'z') {
+				option.selected = true;
+				actuallySelectedBase = base;
+			}
+			elBases.appendChild(option);
+		}
+		setTitle(actuallySelectedBase);
+		return refreshTables();
+	});
+}
+
+function refreshTables() {
+	var selectedConnection = getSelectedConnectionId();
+	var selectedBase = getSelectedBase();
+	var sql = [
+		'SHOW TABLES',
+		"SELECT COLUMN_NAME FROM `information_schema`.COLUMNS WHERE TABLE_SCHEMA='" + selectedBase + "'",
+		"SELECT `ROUTINES`.ROUTINE_TYPE, `ROUTINES`.SPECIFIC_NAME, GROUP_CONCAT(CONCAT_WS(' ', `PARAMETERS`.PARAMETER_NAME, `PARAMETERS`.DATA_TYPE) ORDER BY `PARAMETERS`.ORDINAL_POSITION ASC SEPARATOR '|') FROM `information_schema`.`ROUTINES` LEFT JOIN `information_schema`.`PARAMETERS` ON (`PARAMETERS`.SPECIFIC_SCHEMA = `ROUTINES`.ROUTINE_SCHEMA AND `PARAMETERS`.SPECIFIC_NAME = `ROUTINES`.SPECIFIC_NAME AND `PARAMETERS`.ROUTINE_TYPE = `ROUTINES`.ROUTINE_TYPE) WHERE `PARAMETERS`.PARAMETER_NAME IS NOT NULL AND `ROUTINES`.ROUTINE_SCHEMA = '" + selectedBase + "' GROUP BY `PARAMETERS`.ROUTINE_TYPE, `PARAMETERS`.SPECIFIC_NAME",
+	].join(';\n');
+	return apiCall('query', selectedConnection, selectedBase, sql).promise.then(function (resultset) {
+		var tables = [];
+		editor.clearCompletions('table');
+		editor.clearCompletions('column');
+		editor.clearSnippets();
+		var currentTables = Array.prototype.slice.call(elTables.querySelectorAll('.table.current'), 0).map(function (elTable) {
+			return elTable.dataset.table;
+		});
+		elTables.innerHTML = '';
+		elTables.__tables = tables;
+		for (var i = 0; i < resultset[0].rows.length; i++) {
+			var table = resultset[0].rows[i][0];
+			editor.addCompletion('table', table);
+			tables.push(table);
+			var div = document.createElement('div');
+			div.classList.add('table');
+			if (currentTables.indexOf(table) > -1)
+				div.classList.add('current');
+			div.value = table;
+			div.dataset.table = table;
+			var a = document.createElement('a');
+			a.href = '#!exec&sql=SELECT * FROM `' + backtickEscape(table) + '`;';
+			a.textContent = table;
+			div.appendChild(a);
+			elTables.appendChild(div);
+		}
+		if (resultset[1] && resultset[1].rows.length) {
+			for (var i = 0; i < resultset[1].rows.length; i++)
+				editor.addCompletion('column', resultset[1].rows[i][0]);
+		}
+		if (resultset[2] && resultset[2].rows.length) {
+			for (var i = 0; i < resultset[2].rows.length; i++) {
+				var row = resultset[2].rows[i];
+				var type = row[0];
+				var name = row[1];
+				var params = row[2] && row[2].split('|') || [];
+				params = params.map(function (v, i) {
+					return '${' + (i+1) + ':' + v + '}';
+				});
+				var snippet = name + '(' + params.join(', ') + ')';
+				if (type.toLowerCase() == 'procedure')
+					snippet = 'CALL ' + snippet + ';';
+				editor.addSnippet(name, snippet);
+			}
+		}
+		return tables;
+	});
+}
+
+function parseSql(s) {
+	var res = [];
+	var reAny = /`|'|"/g;
+	var reClosings = {
+		'`': /(`+)/g,
+		'"': /(\\*")/g,
+		"'": /(\\*')/g,
+	};
+	var reCommented = /--+[^\r\n]*$/;
+	var m;
+	var offset = false;
+	var cap = false;
+	var cap2;
+	while (s) {
+		m = reAny.exec(s);
+		if (!m)
+			break;
+		
+		cap = m[0];
+		offset = m.index;
+		sub = s.substr(0, offset);
+		
+		if (reCommented.test(sub)) {
+			var nextLine = s.substr(offset).search(/[\r\n]/);
+			reAny.lastIndex = nextLine >= 0 ? offset + nextLine : s.length;
+			continue;
+		}
+		res.push(sub);
+		s = s.substr(offset);
+		reAny.lastIndex = 0;
+		offset = false;
+		reClosings[cap].lastIndex = cap.length;
+		while (m = reClosings[cap].exec(s)) {
+			if (m[1].length % 2 == 1) {
+				cap2 = m[1];
+				offset = m.index + cap2.length;
+				break;
+			}
+		}
+		if (offset === false) {
+			throw new Error("Unable to find matching enclosing character opened at position " + res.join('').length);
+		}
+		res.push(s.substr(0, offset));
+		s = s.substr(offset);
+	}
+	if (s)
+		res.push(s);
+	
+	var parsed = res;
+	var counter = 0;
+	var placeholders = {};
+	for (var i = 0; i < parsed.length; i += 2) {
+		var re = /(\?)|:([a-zA-Z\d_]+)/g;
+		var s = parsed[i];
+		while (m = re.exec(s)) {
+			// if (reCommented.test(s.slice(0, m.index).split(/[\r\n]/).pop()))
+			// 	continue;
+			placeholders[m[1] ? counter++ : m[2]] = true;
+		}
+	}
+	
+	return {
+		parsed: parsed,
+		placeholders: Object.keys(placeholders),
+		sql: parsed.join(''),
+	};
+}
+
+function escapeSqlString(s, quote) {
+	if (s === null)
+		return 'NULL';
+	if (typeof s == 'boolean')
+		return s ? '1' : '0';
+	if (typeof s == 'number')
+		return s.toString();
+	quote = quote || '"';
+	return quote + s.split('\\').join('\\\\').split(quote).join('\\' + quote) + quote;
+}
+
+function buildSqlStatement(statement, values) {
+	var sql = statement.parsed;
+	var counter = 0;
+	var re = /(\?)|:([a-zA-Z\d_]+)/g;
+	var reCommented = /--+[^\r\n]*$/;
+	for (var i = 0; i < sql.length; i += 2) {
+		re.lastIndex = 0;
+		sql[i] = sql[i].replace(re, function (m0, m1, m2, pos) {
+			// if (reCommented.test(sql[i].slice(0, pos).split(/[\r\n]/).pop()))
+			// 	return m0;
+			var key = m1 ? counter++ : m2;
+			return typeof values[key] != 'undefined' ? escapeSqlString(values[key]) : m0;
+		});
+	}
+	return sql.join('');
+}
+
+function executeQuery(sql, safeRows) {
+	var selectedConnection = getSelectedConnectionId();
+	var selectedBase = getSelectedBase();
+	var matches = /\b(?:(database)|(table|view))\b/i.exec(sql) || [];
+	var thenRefreshBases = !!matches[1];
+	var thenRefreshTables = !!matches[2];
+	safeRows = safeRows || config.safeRows || 100;
+	
+	function run(sql) {
+		editor.setDisabled(true);
+		for (var i = elResultset.children.length - 1; i >= 0; i--) {
+			if (!elResultset.children[i].classList.contains('pinned'))
+				elResultset.removeChild(elResultset.children[i]);
+		}
+		cleanupCurrentTables();
+		elMain.classList.add('loading');
+		return apiCall('query', selectedConnection, selectedBase, sql, safeRows, true).promise;
+	}
+	
+	return new Promise(function (resolve, reject) {
+			var statement = parseSql(sql);
+			if (!statement.placeholders.length)
+				resolve(run(sql));
+			else {
+				promptSqlValues(statement.placeholders)
+					.then(function (values) {
+						var sql = buildSqlStatement(statement, values);
+						resolve(run(sql));
+					})
+					.catch(reject)
+				;
+			}
+		})
+		.catch(function (error) {
+			showError(error, true);
+		})
+		.then(function (resultset) {
+			cleanupConsole('error');
+			
+			showResultset(resultset, {
+				resultCtlButtons: [
+					{
+						html: '&#x1f4cc;',
+						title: 'Pin Result',
+						className: 'btn-pin btn-flat',
+					},
+					{
+						html: '&#x1f4c8;',
+						title: 'Chart',
+						className: 'btn-chart btn-flat',
+					},
+					{
+						html: '&#x1f4be;',
+						title: 'Export',
+						className: 'btn-export btn-flat',
+					},
+				],
+			});
+			
+			if (thenRefreshBases)
+				refreshBases();
+			else if (thenRefreshTables)
+				refreshTables();
+			
+			if (elErrors.length > 0) {
+				elResultset.scrollTo(0, elErrors[0][1].offsetTop);
+			}
+			
+			if (rowCounts.length) {
+				// showMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
+			}
+		})
+		.finally(function () {
+			editor.setDisabled(false);
+			('ontouchstart' in document.body ? elResultset : editor).focus();
+			elMain.classList.remove('loading');
+		})
+	;
+}
+
+function showResultset(resultset, conf) {
+	conf = conf || {};
+	var rowCounts = [];
+	var elErrors = [];
+	for (var i = 0; i < resultset.length; i++) {
+		var result = resultset[i];
+		var tab = document.createElement('div');
+		tab.classList.add('tab');
+		var tabContents = document.createElement('div');
+		tabContents.classList.add('tab-contents');
+		tab.appendChild(tabContents);
+		if (result.error) {
+			elErrors.push(showError(result.error, tabContents));
+		}
+		else {
+			var table = createTableFromResult(result);
+			rowCounts.push((result.rows ? result.rows.length : 0) + (result.safeCut ? '+' : ''));
+			if (result.info) {
+				var info = document.createElement('div');
+				info.classList.add('result-info');
+				info.textContent = result.info.replace(/\s{2,}/g, '\t');
+				tabContents.appendChild(info);
+			}
+			if (table) {
+				tabContents.appendChild(table);
+				
+				if (conf.resultCtlButtons) {
+					var elResultCtl = document.createElement('div');
+					elResultCtl.classList.add('result-ctl');
+					tabContents.appendChild(elResultCtl);
+					
+					conf.resultCtlButtons.forEach(function (btnDef) {
+						if (typeof btnDef !== 'object') {
+							btnDef = {
+								className: btnDef + '',
+							};
+						}
+						var elBtn = document.createElement('button');
+						elBtn.innerHTML = btnDef.html || '';
+						elBtn.title = btnDef.title || '';
+						elBtn.className = 'btn-flat ' + (btnDef.className || '');
+						elResultCtl.appendChild(elBtn);
+						elBtn.__table = table;
+						elBtn.__tab = tab;
+					});
+				}
+			}
+			else if (!result.info) {
+				var empty = document.createElement('div');
+				empty.classList.add('result-empty');
+				empty.textContent = 'OK';
+				tabContents.appendChild(empty);
+			}
+		}
+		elResultset.appendChild(tab);
+		if (i === 0) {
+			elResultset.scrollTop = tab.offsetTop;
+		}
+	}
+}
+
+function createTableFromResult(result) {
+	if (!result || !result.fields || !result.fields.length)
+		return null;
+	
+	const SHORTEN_LENGTH = 200;
+	var selectedBase = getSelectedBase();
+	var table = document.createElement('table');
+	table.classList.add('result');
+	table.__result = result;
+	var thead = document.createElement('thead');
+	var tbody = document.createElement('tbody');
+	var tr = document.createElement('tr');
+	var fieldsCount = result.fields.length;
+	var orgtables = {};
+	for (var x = 0; x < fieldsCount; x++) {
+		var th = document.createElement('th');
+		th.textContent = result.fields[x].name;
+		var hint = [];
+		if (result.fields[x].orgtable) {
+			orgtables[result.fields[x].orgtable] = 1;
+		}
+		if (selectedBase == result.fields[x].db && result.fields[x].orgtable) {
+			setCurrentTable(result.fields[x].orgtable);
+		}
+		if (result.fields[x].orgtable && result.fields[x].orgname) {
+			if (typeof editor !== 'undefined') {
+				editor.addCompletion('column', result.fields[x].orgname);
+			}
+			hint.push('`'+ backtickEscape(result.fields[x].orgtable) +'`.`'+ backtickEscape(result.fields[x].orgname) +'`');
+			if (result.fields[x].name != result.fields[x].orgname)
+				hint.push('AS `' + backtickEscape(result.fields[x].name) + '`');
+		}
+		else {
+			hint.push('`' + backtickEscape(result.fields[x].name) + '`');
+		}
+		hint.push(result.fields[x].type + (result.fields[x].length ? ' (' + result.fields[x].length + ')' : ''));
+		th.title = hint.join('\n');
+		
+		tr.appendChild(th);
+	}
+	orgtables = Object.keys(orgtables);
+	table.dataset.orgtables = orgtables.join(', ');
+	
+	thead.appendChild(tr);
+	
+	if (result.safeCut) {
+		var tr = document.createElement('tr');
+		tr.classList.add('safe-cut');
+		tr.innerHTML = '<td colspan="' + fieldsCount + '">Safe cut: there are more rows (>' + result.safeRows + ')</td>';
+		tbody.appendChild(tr);
+	}
+	
+	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY|JSON)$/i;
+	var urlValueRe = /^(?:[a-z]+:|file:\/)\/\/[^\s/]+\S*$/;
+	var y = 0;
+	function appendRowsChunk() {
+		var limY = Math.min(y + 300, result.rows.length);
+		for (; y < limY; y++) {
+			tr = document.createElement('tr');
+			for (var x = 0; x < fieldsCount; x++) {
+				var value = result.rows[y][x];
+				var td = document.createElement('td');
+				var type = result.fields[x].type;
+				td.className = 'type-' + type;
+				if (value === null || (type == 'TIMESTAMP' && value === '')) {
+					td.className += ' type-NULL';
+				}
+				td.dataset.type = type;
+				td.dataset.x = x;
+				td.dataset.y = y;
+				td.dataset.name = result.fields[x].name;
+				td.__value = value;
+				if (value && bigValuesRe.test(type) && value.length > (SHORTEN_LENGTH + 3)) {
+					value = value.substr(0, SHORTEN_LENGTH);
+					td.className += ' value-shortened';
+				}
+				td.textContent = value;
+				if (urlValueRe.test(value)) {
+					var a = document.createElement('a');
+					a.className = 'value-link';
+					a.href = value;
+					a.target = '_blank';
+					td.insertBefore(a, td.firstChild);
+				}
+				tr.appendChild(td);
+			}
+			tbody.appendChild(tr);
+		}
+		
+		if (limY < result.rows.length) {
+			setTimeout(appendRowsChunk, 10);
+		}
+	}
+	
+	if (!result.rows.length) {
+		var tr = document.createElement('tr');
+		tr.classList.add('empty');
+		tr.innerHTML = '<td colspan="' + fieldsCount + '">Empty result</td>';
+		tbody.appendChild(tr);
+	}
+	else {
+		appendRowsChunk();
+	}
+	table.appendChild(thead);
+	table.appendChild(tbody);
+	return table;
+}
+
+// https://stackoverflow.com/a/6969486
+function escapeRegExp(str) {
+	return str.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
+}
+
+function setCookie(name, value) {
+	var expires = new Date();
+	expires.setFullYear(expires.getFullYear() + (value !== null ? 1 : -1));
+	return document.cookie = [
+		encodeURIComponent(name.trim()) + '=' + encodeURIComponent(value),
+		// 'path=',
+		'expires=' + expires.toUTCString(),
+	].join('; ');
+}
+
+function getCookie(name, defaultValue) {
+	name = encodeURIComponent((name + '').trim());
+	var re = new RegExp('\b' + name + '=([^;]*)');
+	var res = re.exec(document.cookie);
+	return res ? decodeURIComponent(res[1]) : defaultValue;
+}
+
+function cleanupCurrentTables() {
+	var currentTables = elTables.querySelectorAll('.table.current');
+	for (var i = 0; i < currentTables.length; i++) {
+		currentTables[i].classList.remove('current');
+	}
+	return currentTables;
+}
+
+function setCurrentTable(table) {
+	var elTable = elTables.querySelector('.table[data-table="' + table + '"]');
+	if (elTable)
+		elTable.classList.add('current');
+	return elTable;
+}
+
+var refreshStatXhr;
+function refreshStat() {
+	var selectedConnection = getSelectedConnectionId();
+	if (!selectedConnection) {
+		return Promise.reject({
+			code: 'UNDEFINED_CONNECTION',
+			message: 'Create connection first',
+		});
+	}
+	if (refreshStatXhr)
+		refreshStatXhr.abort();
+	refreshStatXhr = apiCall('stat', selectedConnection, true);
+	return refreshStatXhr.promise
+		.then(function (result) {
+			elStat.textContent = result.stat.join('\n');
+			elStat.innerHTML = '<span>' + elStat.innerHTML.split('\n').join('</span>\n<span>') + '</span>';
+			elStatProcesslist.innerHTML = '';
+			elStatProcesslist.appendChild(createTableFromResult(result.processlist));
+			return result;
+		})
+		.catch(function (error) {
+			// pass
+		})
+	;
+}
+
+function cleanupConsole(className) {
+	var messages = elConsole.querySelectorAll('.message' + (className ? '.' + className : ''));
+	for (var i = 0; i < messages.length; i++) {
+		messages[i].parentElement.removeChild(messages[i]);
+	}
+	return messages.length;
+}
+
+function showMessage(content, className, cleanup) {
+	var message = document.createElement('div');
+	message.className = ('message ' + (className || '')).trim();
+	var close = document.createElement('span');
+	close.classList.add('btn-close');
+	message.appendChild(close);
+	var container = document.createElement('div');
+	container.classList.add('message-container');
+	if (content instanceof HTMLElement)
+		container.appendChild(content);
+	else
+		container.textContent = content + '';
+	message.appendChild(container);
+	var scrollToEnd = elConsole.scrollHeight && elConsole.scrollTop >= (elConsole.scrollHeight - elConsole.offsetHeight - 5);
+	if (cleanup) {
+		cleanupConsole(className);
+	}
+	elConsole.appendChild(message);
+	if (scrollToEnd) {
+		elConsole.scrollTop = elConsole.scrollHeight;
+	}
+	return message;
+}
+
+function showError(error, duplicate) {
+	var content = document.createElement('div');
+	if (typeof error == 'string') {
+		error = {
+			message: error,
+		};
+	}
+	if (error.code) {
+		var code = document.createElement('span');
+		code.textContent = error.code;
+		code.classList.add('error-code');
+		content.appendChild(code);
+	}
+	if (error.message) {
+		var message = document.createElement('span');
+		message.textContent = error.message;
+		message.classList.add('error-message');
+		content.appendChild(message);
+	}
+	if (error.file) {
+		var link = '';
+		var file = document.createElement('div');
+		file.textContent = error.file;
+		var match = new RegExp(SERVER.file + ':(\\d+)$').exec(error.file);
+		if (match) {
+			file.innerHTML = '<a href="?source#L' + match[1] + '" target="_blank">' + file.innerHTML + '</a>';
+		}
+		file.classList.add('error-file');
+		content.appendChild(file);
+	}
+	if (!content.children.length)
+		return null;
+	
+	var errorMessage = showMessage(content, 'error');
+	
+	if (duplicate) {
+		if (!(duplicate instanceof HTMLElement)) {
+			var tab = document.createElement('div');
+			tab.classList.add('tab');
+			var tabContents = document.createElement('div');
+			tabContents.classList.add('tab-contents');
+			tab.appendChild(tabContents);
+			elResultset.appendChild(tab);
+			duplicate = tabContents;
+		}
+		errorMessageDup = errorMessage.cloneNode(true);
+		duplicate.appendChild(errorMessageDup);
+		return [
+			errorMessage,
+			errorMessageDup,
+		];
+	}
+	else {
+		return [errorMessage];
+	}
+}
+
+var locationParams = new (function () {
+	var LZS = 'Z~'; // marker
+	var TRUE_VALUE = '1';
+	var FALSE_VALUE = '';
+	this.encodeValue = function (value) {
+		if (typeof value === 'boolean' || value === null || typeof value === 'undefined')
+			return value ? TRUE_VALUE : FALSE_VALUE; // omit encodeURIComponent
+		value = value.toString();
+		if (value.length > 500 || value.slice(0, LZS.length) === LZS) {
+			value = LZS + LZString144.compressToBase64(value);
+		}
+		return encodeURIComponent(value);
+	};
+	this.decodeValue = function (value) {
+		if (typeof value === 'boolean' || value === null || typeof value === 'undefined')
+			return value ? TRUE_VALUE : FALSE_VALUE;
+		value = decodeURIComponent(value.toString());
+		if (value.slice(0, LZS.length) === LZS) {
+			value = LZString144.decompressFromBase64(value.slice(LZS.length));
+		}
+		return value;
+	};
+	this.getPairs = function () {
+		if (!/^#!/.test(document.location.hash)) {
+			return null;
+		}
+		return document.location.hash.slice(2).split('&');
+	};
+	this.getAll = function () {
+		var pairs = this.getPairs();
+		var res = {};
+		if (!pairs) {
+			return res;
+		}
+		var eqIndex = -1;
+		var pair;
+		for (var i = pairs.length - 1; i >= 0; i--) {
+			eqIndex = pairs[i].indexOf('=');
+			if (eqIndex < 0) {
+				res[decodeURIComponent(pairs[i])] = TRUE_VALUE;
+			}
+			else {
+				res[decodeURIComponent(pairs[i].slice(0, eqIndex))] = this.decodeValue(pairs[i].slice(eqIndex + 1));
+			}
+		}
+		return res;
+	};
+	this.get = function (name) {
+		var pairs = this.getPairs();
+		if (!pairs) {
+			return null;
+		}
+		name = encodeURIComponent(name);
+		var nameEq = name + '=';
+		for (var i = pairs.length - 1; i >= 0; i--) {
+			if (pairs[i] === name) {
+				return TRUE_VALUE;
+			}
+			else if (pairs[i].slice(0, nameEq.length) === nameEq) {
+				return this.decodeValue(pairs[i].slice(nameEq.length));
+			}
+		}
+		return null;
+	};
+	this.set = function (name, value) {
+		var pairs = this.getPairs() || [];
+		name = encodeURIComponent(name);
+		value = this.encodeValue(value);
+		var nameEq = name + '=';
+		var replaced = false;
+		for (var i = pairs.length - 1; i >= 0; i--) {
+			if (pairs[i] === name || pairs[i].slice(0, nameEq.length) === nameEq) {
+				if (replaced) {
+					pairs.splice(i, 1);
+				}
+				else {
+					replaced = true;
+					pairs[i] = nameEq + value;
+				}
+			}
+		}
+		if (!replaced) {
+			pairs.push(nameEq + value);
+		}
+		document.location.replace('#!' + pairs.join('&'));
+		return this;
+	};
+	this.del = function (name) {
+		var pairs = this.getPairs();
+		if (!pairs) {
+			return false;
+		}
+		name = encodeURIComponent(name);
+		var nameEq = name + '=';
+		var counter = 0;
+		for (var i = pairs.length - 1; i >= 0; i--) {
+			if (pairs[i] === name || pairs[i].slice(0, nameEq.length) === nameEq) {
+				pairs.splice(i, 1);
+				counter++;
+			}
+		}
+		if (counter > 0) {
+			document.location.replace('#!' + pairs.join('&'));
+		}
+		return counter;
+	};
+})();
+
+
+// Custom Ace completer:
+function SQLNamesCompleter(tag) {
+	Object.defineProperties(this, {
+		tag: {
+			value: tag,
+		},
+		clear: {
+			value: function () {
+				this.splice(0, this.length);
+			},
+		},
+		getCompletions: {
+			value: function (editor, session, pos, prefix, callback) {
+				callback(null, this.map(function (word) {
+					return {
+						caption: word,
+						value: word,
+						score: 0,
+						meta: tag
+					};
+				}));
+			},
+		},
+	});
+}
+SQLNamesCompleter.prototype = Object.create(Array.prototype);
+SQLNamesCompleter.prototype.constructor = SQLNamesCompleter;
+
+var config = new (function LocalConfig() {
+	var prefix = 'mymi_';
+	var _this = this;
+	var types = {};
+	
+	function setType(value, type) {
+		if (typeof value == type)
+			return value;
+		else if (type == 'string')
+			return value + '';
+		else if (type == 'boolean')
+			return /^(true|1|on)$/i.test(value);
+		else if (type == 'number')
+			return parseFloat(value) || +value;
+		else if (type == 'array')
+			return typeof value == 'string' ? value.split(';') : [].concat(value);
+		else if (type == 'object')
+			return typeof value == 'string' ? JSON.parse(value) : null;
+		throw "Incompatible type '" + type + "'";
+	}
+	
+	this.connection_id = '';
+	this.base = '';
+	this.query = '';
+	this.splitter_elMain = 0;
+	this.enableSnippets = true;
+	this.enableLiveAutocompletion = true;
+	this.safeRows = 100;
+	
+	for (var k in this) {
+		(function (k, defaultValue) {
+			Object.defineProperty(_this, k, {
+				enumerable: true,
+				get: function () {
+					if (!types[k])
+						types[k] = typeof defaultValue == 'object' ? (defaultValue instanceof Array ? 'array' : 'object') : typeof defaultValue;
+					var value = localStorage.getItem(prefix + k);
+					return setType(value === null ? defaultValue : value, types[k]);
+				},
+				set: function (value) {
+					if (typeof value == 'object')
+						value = value instanceof Array ? value.join(';') : JSON.stringify(value);
+					localStorage.setItem(prefix + k, value);
+				},
+			});
+		})(k, this[k]);
+	}
+})();
+
+// </script>
+
+-- ################################################################################################
+
+Name: plugin-blob-value.html.inc
+Content-Type: text/html; charset="utf-8"
+
+<div id="elModalBlobValue" class="modal">
+	<h2 id="elModalBlobValueTitle"></h2>
+	<div class="m-b">
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,256" checked>Raw</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,16">Hex</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="data,2">Binary</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="json">JSON</label>
+		<label class="m-r"><input type="radio" name="blob-value-display-mode" value="php">PHP</label>
+	</div>
+	<div id="elBlobValueView" autofocus tabindex="0"></div>
+	<script src="?part=create-dir-element.js"></script>
+	<script src="?part=php-unserialize.js"></script>
+	<script>
+	
+	(function (elModalBlobValue, elModalBlobValueTitle, elBlobValueView) {
+		var bigValuesRe = /(BLOB|STRING|GEOMETRY|JSON)$/i;
+		var intValuesRe = /(CHAR|INT|LONG)$/i;
+		
+		function encode(value, type, base) {
+			if (base == 256) {
+				elBlobValueView.textContent = value;
+				return;
+			}
+			var chunkSize = Math.ceil(8 / Math.log2(base));
+			var fill = new Array(chunkSize).fill('0').join('');
+			var decoded = [];
+			
+			if (intValuesRe.test(type)) {
+				return; // TODO: convert int64
+			}
+			else if (typeof value === 'string') {
+				for (var i = 0; i < value.length; i++) {
+					decoded.push((fill + value.charCodeAt(i).toString(base)).slice(-chunkSize));
+				}
+			}
+			else {
+				return;
+			}
+			elBlobValueView.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
+		}
+		
+		function showValue(value, type, name) {
+			var elDefMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="data,256"]');
+			var elJsonMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="json"]');
+			var elPhpMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="php"]');
+			var elMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"]:checked');
+			elJsonMode.disabled = !/^\s*(\[|\{|-?\d+|")/.test(value); // looks like json
+			elPhpMode.disabled = !/^(N;|[bbidsaO]:)/.test(value); // looks like php
+			if (elMode.disabled) {
+				elMode.checked = false;
+				elDefMode.checked = true;
+				return showValue(value, type, name);
+			}
+			var mode = elMode.value;
+			if (mode === 'json' || mode === 'php') {
+				elBlobValueView.removeAttribute('contenteditable');
+				elBlobValueView.textContent = '';
+				var o = null;
+				try {
+					if (mode === 'php')
+						o = phpUnserialize(value);
+					else
+						o = JSON.parse(value);
+				}
+				catch (e) {
+					o = e;
+				}
+				elBlobValueView.appendChild(createDirElement(o, null, null, 1));
+			}
+			else {
+				var base = +mode.split(',')[1];
+				elBlobValueView.setAttribute('contenteditable', 'true');
+				encode(value, type, base);
+			}
+		}
+		
+		elResultset.addEventListener('click', function (event) {
+			if (!event.ctrlKey || !bigValuesRe.test(event.target.dataset.type))
+				return;
+			var td = event.target;
+			elModalBlobValue.__td = td;
+			
+			elModalBlobValueTitle.textContent = td.dataset.name + ' (' + td.dataset.type + ')';
+			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
+			
+			Modal.show(elModalBlobValue);
+		});
+		
+		elModalBlobValue.addEventListener('change', function (event) {
+			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
+		});
+		
+		elBlobValueView.addEventListener('keydown', function (event) {
+			if (event.ctrlKey) {
+				if (event.keyCode === 86 || event.keyCode === 88) { // ctrl+x, ctrl+v
+					event.preventDefault();
+					return false;
+				}
+				return true;
+			}
+			// keycode: http://www.programming-magic.com/file/20080205232140/keycode_table.html
+			if (33 <= event.keyCode && event.keyCode <= 40)
+				return true;
+			event.preventDefault();
+			return false;
+		});
+	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueView);
+	
+	</script>
+</div>
+
+-- ################################################################################################
+
+Name: plugin-chart.html.inc
+Content-Type: text/html; charset="utf-8"
+
+<div id="elModalChart" class="modal modal-full">
+	<span class="modal-close"></span>
+	<h2>Chart</h2>
+	<div class="m-t">X-axis: <select id="elChartXCol"></select></div>
+	<div class="m-t">Y-axis: <span id="elChartYCols"></span></div>
+	<div class="m-t" id="elChartContainer"></div>
+	<div class="m-t" id="elChartInfoContainer">
+		<div class="m-t" id="elChartInfoOffset"></div>
+		<div class="m-t" id="elChartInfo"></div>
+	</div>
+	<style>
+	#elModalChart > h2 {
+		margin-top: 0;
+	}
+	#elChartContainer > .tinychart {
+		width: 100%;
+		height: 16em;
+		max-height: 50vh;
+	}
+	#elChartInfoContainer {
+		display: flex;
+		overflow: hidden;
+	}
+	#elChartInfo h4 {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	#elChartInfo > div {
+		position: relative;
+		line-height: 1.4em;
+		height: 1.4em;
+		transition: top 0.1s ease;
+	}
+	#elChartInfo > div:before {
+		content: attr(data-label);
+		white-space: nowrap;
+		position: absolute;
+		right: 100%;
+		margin-right: 0.35em;
+		opacity: 0.65;
+		filter: grayscale(0.75);
+	}
+	#elChartInfo > div:empty:before {
+		opacity: 0.25;
+	}
+	
+	</style>
+	<script src="?part=tinychart.js"></script>
+	<script>
+	
+	(function (context, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfoOffset, elChartInfo) {
+		var stringTypes = ['ENUM','SET','VAR_STRING','STRING'];
+		var numberTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
+		var dateTypes = ['TIMESTAMP','DATE','TIME','DATETIME','NEWDATE'];
+		var availXTypes = [].concat(stringTypes).concat(numberTypes).concat(dateTypes);
+		var availYTypes = [].concat(numberTypes);
+		
+		context.showChart = function (result) {
+			while (elChartXCol.children.length)
+				elChartXCol.removeChild(elChartXCol.children[0]);
+			while (elChartYCols.childNodes.length)
+				elChartYCols.removeChild(elChartYCols.childNodes[0]);
+			var yChecked = false;
+			for (var i = 0; i < result.fields.length; i++) {
+				var type = result.fields[i].type;
+				
+				if (availXTypes.indexOf(type) > -1) {
+					var elOption = document.createElement('option');
+					elOption.value = i;
+					elOption.textContent = elOption.innerText = result.fields[i].name;
+					elChartXCol.appendChild(elOption);
+				}
+				if (availYTypes.indexOf(type) > -1) {
+					var elLabel = document.createElement('label');
+					elChartYCols.appendChild(elLabel);
+					elChartYCols.appendChild(document.createTextNode(" "));
+					elLabel.textContent = elLabel.innerText = result.fields[i].name;
+					elLabel.className = 'm-r nowrap';
+					var elCheckbox = document.createElement('input');
+					elLabel.insertBefore(elCheckbox, elLabel.firstChild);
+					elCheckbox.type = 'checkbox';
+					elCheckbox.value = i;
+					elCheckbox.dataset.label = result.fields[i].name;
+					if (!yChecked && i != elChartXCol.value) {
+						elCheckbox.checked = yChecked = true;
+					}
+				}
+			}
+			
+			var chart;
+			
+			function redraw() {
+				if (!chart)
+					chart = new Tinychart(elChartContainer);
+				
+				var xCol = +elChartXCol.value;
+				var xType = result.fields[xCol].type;
+				var xTypeIsDate = dateTypes.indexOf(xType) > -1;
+				for (var i = 0; i < elChartYCols.children.length; i++) {
+					elChartYCols.children[i].style.color = '';
+				}
+				var yCheckedInputs = Array.prototype.slice.call(elChartYCols.querySelectorAll('input:checked'), 0);
+				var yCols = yCheckedInputs.map(function (v, i) {
+					return +v.value;
+				});
+				var data = [];
+				
+				for (var i = 0; i < result.rows.length; i++) {
+					var item = [];
+					var x = result.rows[i][xCol];
+					if (xTypeIsDate) {
+						x = new Date((x + ' 00:00:00').split(' ', 2).join('T') + 'Z');
+					}
+					item[0] = x;
+					
+					for (var j = 0; j < yCols.length; j++)
+						item[j + 1] = result.rows[i][yCols[j]];
+					
+					data.push(item);
+				}
+				
+				chart.setData(data);
+				for (var i = 0; i < yCheckedInputs.length; i++) {
+					yCheckedInputs[i].parentElement.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
+				}
+				chart._labels = yCheckedInputs.map(function (v, i) {
+					return v.dataset.label;
+				});
+			}
+			
+			function redrawChartInfo(hoveredItem) {
+				if (!elChartInfo.__h4) {
+					elChartInfo.__h4 = document.createElement('h4');
+					elChartInfo.insertBefore(elChartInfo.__h4, elChartInfo.children[0]);
+				}
+				elChartInfo.__h4.textContent = hoveredItem.x instanceof Date && hoveredItem.x.toISOString
+					? hoveredItem.x.toISOString().replace(/^(.+)T(.+)(?:\.\d*)Z$/, '$1 $2')
+					: hoveredItem.x;
+				while (elChartInfo.children.length > hoveredItem.y.length + 1) {
+					elChartInfo.removeChild(elChartInfo.children[1]);
+				}
+				
+				var sortedVals = hoveredItem.y.map(function (v, i) {
+					return [i, v];
+				});
+				sortedVals.sort(function (a, b) {
+					return b[1] - a[1] || a[0] - b[0];
+				});
+				var offsets = [];
+				for (var i = sortedVals.length - 1; i >= 0; i--) {
+					offsets[sortedVals[i][0]] = i - sortedVals[i][0];
+				}
+				var height = null;
+				
+				for (var i = 0; i < hoveredItem.y.length; i++) {
+					var el = elChartInfo.children[i + 1];
+					if (!el) {
+						el = document.createElement('div');
+						elChartInfo.appendChild(el);
+					}
+					if (height === null) {
+						height = el.clientHeight;
+					}
+					el.dataset.label = chart._labels[i];
+					el.textContent = typeof hoveredItem.y[i] !== 'undefined' ? hoveredItem.y[i] : '';
+					el.style.color = 'hsl(' + chart.hues[i] + ', 50%, 50%)';
+					el.style.top = offsets[i] * height + 'px';
+				}
+			}
+			
+			var prevHoveredItemIndex = -1;
+			var tmrRedrawChartInfo;
+			function onChartContainerEvent(event) {
+				if (event.type == 'hovervalue') {
+					var val = event.detail;
+					if (prevHoveredItemIndex < 0) {
+						prevHoveredItemIndex = val.index;
+						redrawChartInfo(val);
+					}
+					else if (prevHoveredItemIndex !== val.index) {
+						clearTimeout(tmrRedrawChartInfo);
+						prevHoveredItemIndex = val.index;
+						tmrRedrawChartInfo = setTimeout(redrawChartInfo.bind(null, val), 50);
+					}
+				}
+				else if (event.type == 'mousemove' && event.currentTarget == elChartContainer) {
+					var x = event.offsetX / elChartContainer.clientWidth;
+					elChartInfoOffset.style.flexBasis = Math.min(1, x) * 100 + '%';
+				}
+			}
+			function onModalEvent(event) {
+				if (event.type == 'change') {
+					redraw();
+				}
+				else if (event.type == 'modal-hide') {
+					prevHoveredItemIndex = -1;
+					delete elChartInfo.__h4;
+					while (elChartInfo.children.length) {
+						elChartInfo.removeChild(elChartInfo.children[0]);
+					}
+					elModalChart.removeEventListener('change', onModalEvent);
+					elModalChart.removeEventListener('modal-hide', onModalEvent);
+					elChartContainer.removeEventListener('hovervalue', onChartContainerEvent);
+					elChartContainer.removeEventListener('mousemove', onChartContainerEvent);
+					if (chart) {
+						chart.remove();
+					}
+				}
+			}
+			
+			elModalChart.addEventListener('change', onModalEvent);
+			elModalChart.addEventListener('modal-hide', onModalEvent);
+			elChartContainer.addEventListener('hovervalue', onChartContainerEvent);
+			elChartContainer.addEventListener('mousemove', onChartContainerEvent);
+			
+			Modal.show(elModalChart);
+			redraw();
+		};
+		
+		elResultset.addEventListener('click', function (event) {
+			if (!event.target.classList.contains('btn-chart'))
+				return;
+			var result = event.target.__table.__result;
+			context.showChart(result);
+		});
+		
+	})(this, elResultset, elModalChart, elChartXCol, elChartYCols, elChartContainer, elChartInfoOffset, elChartInfo);
+	
+	</script>
+</div>
+
+-- ################################################################################################
+
+Name: plugin-export.html.inc
+Content-Type: text/html; charset="utf-8"
+
+<div id="elModalExport" class="modal modal-full">
+	<span class="modal-close"></span>
+	<h2>Export</h2>
+	<div class="m-t">Columns: <span id="elExportCols"></span></div>
+	<textarea class="m-t" id="elExportResult" readonly></textarea>
+	<style>
+	#elModalExport > h2 {
+		margin-top: 0;
+	}
+	#elExportResult {
+		display: block;
+		width: 100%;
+		resize: vertical;
+		height: 10em;
+		font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
+	}
+	</style>
+	<script>
+	
+	(function (context, elModalExport, elExportCols, elExportResult) {
+		var unquotedTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
+		context.showExport = function (result) {
+			while (elExportCols.children.length)
+				elExportCols.removeChild(elExportCols.children[0]);
+			elExportResult.value = '';
+			
+			for (var i = 0; i < result.fields.length; i++) {
+				var elLabel = document.createElement('label');
+				elLabel.textContent = elLabel.innerText = result.fields[i].name;
+				elLabel.className = 'm-r nowrap';
+				var elCheckbox = document.createElement('input');
+				elLabel.insertBefore(elCheckbox, elLabel.firstChild);
+				elCheckbox.type = 'checkbox';
+				elCheckbox.value = i;
+				elCheckbox.title = result.fields[i].name;
+				elCheckbox.checked = true;
+				elExportCols.appendChild(elLabel);
+				elExportCols.appendChild(document.createTextNode('\n'));
+			}
+			
+			function redraw() {
+				elExportResult.value = '';
+				var checkedColsNames = [];
+				var checkedCols = Array.prototype.slice.call(elExportCols.querySelectorAll('input:checked'), 0);
+				var quotedCols = {};
+				var tables = [];
+				checkedCols = checkedCols.map(function (v, i) {
+					var col = +v.value
+					var colName = '' + v.title;
+					quotedCols[col] = unquotedTypes.indexOf(result.fields[col].type) < 0;
+					colName = '`' + backtickEscape(colName) + '`';
+					checkedColsNames.push(colName);
+					var table = result.fields[col].orgtable;
+					if (tables.indexOf(table) < 0)
+						tables.push(table);
+					return col;
+				});
+				var table = tables.length != 1 ? '??' : '`' + backtickEscape(tables[0]) + '`';
+				
+				if (!checkedCols.length)
+					return;
+				
+				var lines = [];
+				var i, x, y, v, quoteValue;
+				for (i = 0; i < checkedCols.length; i++) {
+					x = checkedCols[i];
+					quoteValue = quotedCols[x];
+					for (y = 0; y < result.rows.length; y++) {
+						v = result.rows[y][x];
+						if (v === null)
+							v = 'null';
+						else if (quoteValue)
+							v = '"' + ('' + v).replace(/"/g, '""') + '"';
+						
+						if (!lines[y])
+							lines[y] = [];
+						lines[y][i] = v;
+					}
+				}
+				
+				lines = lines.map(function (line) {
+					return '(' + line.join(', ') + ')';
+				});
+				
+				elExportResult.value =
+					'INSERT INTO ' + table + '\n'
+					+ '(' + checkedColsNames.join(', ') + ')\n'
+					+ 'VALUES\n'
+					+ lines.join(',\n') + ';'
+				;
+			}
+			
+			function onModalEvent(event) {
+				if (event.type == 'change') {
+					redraw();
+				}
+			}
+			
+			elModalExport.addEventListener('change', onModalEvent);
+			
+			Modal.show(elModalExport);
+			redraw();
+		};
+		
+		elResultset.addEventListener('click', function (event) {
+			if (!event.target.classList.contains('btn-export'))
+				return;
+			var result = event.target.__table.__result;
+			context.showExport(result);
+		});
+		
+	})(this, elModalExport, elExportCols, elExportResult);
+	
+	</script>
+</div>
+
+-- ################################################################################################
+
+Name: public
+Content-Type: text/html; charset="utf-8"
+X-Execute: On
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, minimum-scale=1, initial-scale=1, shrink-to-fit=no">
+<link rel="shortcut icon" href="?part=favicon-16.png" type="image/png">
+<title>MyMiniAdmin</title>
+<script>
+var SERVER = <?= json_encode(array(
+	'file' => substr($_SERVER['SCRIPT_NAME'], 1),
+	'sessionName' => session_name(),
+	// 'document_root' => $_SERVER['DOCUMENT_ROOT'],
+	'appVersionCode' => Api::getAppVersionCode(),
+)) ?>;
+</script>
+<script src="?part=lz-string-1.4.4.js"></script>
+<script src="?part=common.js"></script>
+<link rel="stylesheet" href="?part=style.css">
+</head>
+<body>
+<script src="?part=modal.js"></script>
+<div id="elWrapper" class="flex-col">
+	<section id="elResultset"></section>
+</div>
+<script>
+var resultset = <?= json_encode(!isset($_GET['params']) ? null : Api::invokePublic($_GET['params'])) ?>;
+Promise.resolve(resultset || apiCall('invokePublic', locationParams.get('params')).promise).then(function (resultset) {
+	showResultset(resultset, {
+		resultCtlButtons: [
+			{
+				html: '&#x1f4c8;',
+				title: 'Chart',
+				className: 'btn-chart btn-flat',
+			},
+			{
+				html: '&#x1f4be;',
+				title: 'Export',
+				className: 'btn-export btn-flat',
+			},
+		],
+	});
+});
+</script>
+<?= (new MultipartFile())->getChunk('plugin-blob-value.html.inc')[1] ?>
+
+<?= (new MultipartFile())->getChunk('plugin-chart.html.inc')[1] ?>
+
+<?= (new MultipartFile())->getChunk('plugin-export.html.inc')[1] ?>
+
+</body>
+</html>
