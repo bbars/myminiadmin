@@ -489,11 +489,15 @@ class Api {
 		$key = self::getCryptKey();
 		$data = pack('L', strlen($data)) . $data;
 		
-		if ($type === 1 || (!$type && function_exists('openssl_​encrypt'))) {
+		if (($type === 1 || !$type) && function_exists('openssl_encrypt')) {
 			$type = 1;
-			// $data = openssl_encrypt($data, );
+			$cipher = 'AES-128-CBC';
+			//$key = substr($key, 0, 32);
+			$ivSize = openssl_cipher_iv_length($cipher);
+			$iv = openssl_random_pseudo_bytes($ivSize);
+			$data = $iv . openssl_encrypt($data, $cipher, $key, OPENSSL_RAW_DATA, $iv);
 		}
-		else if ($type === 2 || (!$type && function_exists('mcrypt_encrypt'))) {
+		else if (($type === 2 || !$type) && function_exists('mcrypt_encrypt')) {
 			$type = 2;
 			$key = substr($key, 0, 32);
 			set_error_handler(function () {});
@@ -501,6 +505,9 @@ class Api {
 			$iv = mcrypt_create_iv($ivSize, MCRYPT_RAND);
 			$data = $iv . mcrypt_encrypt(MCRYPT_RIJNDAEL_128, $key, $data, MCRYPT_MODE_CBC, $iv);
 			restore_error_handler();
+		}
+		else {
+			$type = 0;
 		}
 		return chr($type) . $data;
 	}
@@ -515,10 +522,15 @@ class Api {
 		$data = substr($data, 1);
 		
 		if ($type === 1) {
-			if (!function_exists('openssl_​encrypt')) {
+			if (!function_exists('openssl_decrypt')) {
 				throw new Exception("Unable to decrypt: openssl_decrypt is not available");
 			}
-			// $data = openssl_encrypt($data, );
+			$cipher = 'AES-128-CBC';
+			//$key = substr($key, 0, 32);
+			$ivSize = openssl_cipher_iv_length($cipher);
+			$iv = substr($data, 0, $ivSize);
+			$data = substr($data, $ivSize);
+			$data = openssl_decrypt($data, $cipher, $key, OPENSSL_RAW_DATA, $iv);
 		}
 		else if ($type === 2) {
 			$key = substr($key, 0, 32);
@@ -579,12 +591,12 @@ class Api {
 			'safeRows' => $safeRows,
 			'encodeUtf8' => $encodeUtf8,
 		);
-		$crypt = null;
+		$encryptionType = null;
 		$params = serialize($params);
 		$params = self::compressBytes($params);
-		$params = self::encryptBytes($params, $crypt);
+		$params = self::encryptBytes($params, $encryptionType);
 		$params = base64_encode($params);
-		return $params;
+		return [$encryptionType, $params];
 	}
 	
 	public static function invokePublic($params) {
@@ -597,6 +609,9 @@ class Api {
 		}
 		set_error_handler(function () {});
 		$params = self::decryptBytes($params);
+		if (!$params) {
+			throw new InvalidArgumentException("Parameter 'params' is broken: unable to decrypt");
+		}
 		$params = self::uncompressBytes($params);
 		$params = unserialize($params);
 		restore_error_handler();
@@ -846,7 +861,6 @@ var SERVER = <?= json_encode(array(
 			<section id="elResultset"></section>
 		</main>
 	</div>
-	<section id="elConsole"></section>
 </div>
 <div id="elModalStat" class="modal">
 	<div id="elStat" class="m-b"></div>
@@ -1431,13 +1445,6 @@ elQueryExecButton.addEventListener('click', function () {
 });
 editor.addEventListener('change', function (event) {
 	config.query = editor.getValue();
-});
-
-elConsole.addEventListener('click', function (event) {
-	if (event.target.classList.contains('btn-close')) {
-		var notification = event.target.parentElement;
-		notification.parentElement.removeChild(notification);
-	}
 });
 
 elLogoutButton.addEventListener('click', function () {
@@ -2585,18 +2592,6 @@ body.dragover:after {
 	max-height: 100%;
 }
 
-#elConsole {
-	width: 100%;
-	flex: 1 auto;
-	max-height: 50%;
-	padding: 0;
-	overflow-y: auto;
-	min-height: 3em;
-}
-#elConsole:empty {
-	display: none;
-}
-
 ::-webkit-scrollbar {
 	width: 8px;
 	height: 8px;
@@ -2930,26 +2925,6 @@ textarea:focus {
 	white-space: nowrap;
 }
 
-#elConsole {
-	background: #444;
-	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
-}
-#elConsole > .message * {
-	color: #ddd;
-}
-#elConsole > .message.error {
-	background: rgba(255,192,192, 0.2);
-}
-#elConsole > .message a {
-	color: #fff;
-}
-#elConsole > .message {
-	padding: 0.8em 1em;
-	overflow: hidden;
-}
-#elConsole > * + * {
-	border-top: rgba(255,255,255, 0.2) 1px solid;
-}
 .message > .btn-close {
 	float: right;
 	margin: 0 0 0.3em 1em;
@@ -3165,10 +3140,6 @@ body.modal-stack-show .modal-stack {
 }
 .modal-stack > .modal-full:last-child {
 	display: block;
-}
-
-#elConsole {
-	display: none;
 }
 
 #elQpsChart {
@@ -3917,24 +3888,22 @@ function executeQuery(sql, safeRows) {
 			showError(error, true);
 		})
 		.then(function (resultset) {
-			cleanupConsole('error');
-			
 			showResultset(resultset, {
 				resultCtlButtons: [
 					{
 						html: '&#x1f4cc;',
 						title: 'Pin Result',
-						className: 'btn-pin btn-flat',
+						className: 'btn-pin',
 					},
 					{
 						html: '&#x1f4c8;',
 						title: 'Chart',
-						className: 'btn-chart btn-flat',
+						className: 'btn-chart',
 					},
 					{
 						html: '&#x1f4be;',
 						title: 'Export',
-						className: 'btn-export btn-flat',
+						className: 'btn-export',
 					},
 				],
 			});
@@ -3949,7 +3918,7 @@ function executeQuery(sql, safeRows) {
 			}
 			
 			if (rowCounts.length) {
-				// showMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
+				// createMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
 			}
 		})
 		.finally(function () {
@@ -4192,15 +4161,7 @@ function refreshStat() {
 	;
 }
 
-function cleanupConsole(className) {
-	var messages = elConsole.querySelectorAll('.message' + (className ? '.' + className : ''));
-	for (var i = 0; i < messages.length; i++) {
-		messages[i].parentElement.removeChild(messages[i]);
-	}
-	return messages.length;
-}
-
-function showMessage(content, className, cleanup) {
+function createMessage(content, className) {
 	var message = document.createElement('div');
 	message.className = ('message ' + (className || '')).trim();
 	var close = document.createElement('span');
@@ -4213,14 +4174,6 @@ function showMessage(content, className, cleanup) {
 	else
 		container.textContent = content + '';
 	message.appendChild(container);
-	var scrollToEnd = elConsole.scrollHeight && elConsole.scrollTop >= (elConsole.scrollHeight - elConsole.offsetHeight - 5);
-	if (cleanup) {
-		cleanupConsole(className);
-	}
-	elConsole.appendChild(message);
-	if (scrollToEnd) {
-		elConsole.scrollTop = elConsole.scrollHeight;
-	}
 	return message;
 }
 
@@ -4231,9 +4184,9 @@ function showError(error, duplicate) {
 			message: error,
 		};
 	}
-	if (error.code) {
+	if (error.code || error.code === 0) {
 		var code = document.createElement('span');
-		code.textContent = error.code;
+		code.textContent = error.code || 'ERROR';
 		code.classList.add('error-code');
 		content.appendChild(code);
 	}
@@ -4257,7 +4210,7 @@ function showError(error, duplicate) {
 	if (!content.children.length)
 		return null;
 	
-	var errorMessage = showMessage(content, 'error');
+	var errorMessage = createMessage(content, 'error');
 	
 	if (duplicate) {
 		if (!(duplicate instanceof HTMLElement)) {
@@ -4971,26 +4924,41 @@ var SERVER = <?= json_encode(array(
 <body>
 <script src="?part=modal.js"></script>
 <div id="elWrapper" class="flex-col">
-	<section id="elResultset"></section>
+	<main id="elMain" class="flex-col flex-1-auto">
+		<section id="elResultset"></section>
+	</main>
 </div>
 <script>
+
+elMain.classList.add('loading');
 var resultset = <?= json_encode(!isset($_GET['params']) ? null : Api::invokePublic($_GET['params'])) ?>;
-Promise.resolve(resultset || apiCall('invokePublic', locationParams.get('params')).promise).then(function (resultset) {
-	showResultset(resultset, {
-		resultCtlButtons: [
-			{
-				html: '&#x1f4c8;',
-				title: 'Chart',
-				className: 'btn-chart btn-flat',
-			},
-			{
-				html: '&#x1f4be;',
-				title: 'Export',
-				className: 'btn-export btn-flat',
-			},
-		],
-	});
-});
+Promise.resolve(resultset || apiCall('invokePublic', locationParams.get('params')).promise)
+	.catch(function (error) {
+		showError(error, true);
+	})
+	.then(function (resultset) {
+		if (!resultset) {
+			return;
+		}
+		showResultset(resultset, {
+			resultCtlButtons: [
+				{
+					html: '&#x1f4c8;',
+					title: 'Chart',
+					className: 'btn-chart',
+				},
+				{
+					html: '&#x1f4be;',
+					title: 'Export',
+					className: 'btn-export',
+				},
+			],
+		});
+	})
+	.finally(function () {
+		elMain.classList.remove('loading');
+	})
+;
 </script>
 <?= (new MultipartFile())->getChunk('plugin-blob-value.html.inc')[1] ?>
 
