@@ -2986,6 +2986,7 @@ textarea:focus {
 	box-shadow: #141414 -0.1em -0.1em 0.1em 0.1em, rgba(0,0,0, 0.1) -0.1em -0.1em 1em inset;
 	display: flex;
 	overflow: hidden;
+	user-select: none;
 }
 #elQueryCtl > * {
 	border-radius: 0;
@@ -3764,8 +3765,7 @@ function getSelectedBase() {
 	if (typeof elBases === 'undefined') {
 		return null;
 	}
-	var el = elBases.querySelectorAll('option')[elBases.selectedIndex];
-	return el ? el.value : config.base;
+	return elBases.value || config.base;
 }
 
 function refreshConnections(selectedConnection) {
@@ -3818,10 +3818,12 @@ function createNewConnection() {
 function refreshBases(selectedBase) {
 	var selectedConnection = getSelectedConnectionId();
 	selectedBase = selectedBase || getSelectedBase();
+	var metaBaseNames = ['information_schema', 'performance_schema'];
 	var sql = 'SHOW DATABASES';
 	return apiCall('query', selectedConnection, '', sql).promise.then(function (resultset) {
 		var bases = [];
 		var actuallySelectedBase = '';
+		var fallbackBase = null;
 		editor.clearCompletions('base');
 		elBases.innerHTML = '';
 		elBases.__bases = bases;
@@ -3837,6 +3839,13 @@ function refreshBases(selectedBase) {
 				actuallySelectedBase = base;
 			}
 			elBases.appendChild(option);
+			if (fallbackBase === null && metaBaseNames.indexOf(base.toLowerCase()) === -1) {
+				fallbackBase = option.index;
+			}
+		}
+		if (!actuallySelectedBase) {
+			elBases.selectedIndex = fallbackBase;
+			actuallySelectedBase = elBases.value;
 		}
 		setTitle(actuallySelectedBase);
 		return refreshTables();
