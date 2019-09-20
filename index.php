@@ -591,7 +591,7 @@ class Api {
 		return $data;
 	}
 	
-	public static function genPublicLinkParams($dbCfg, $base, $sql, $safeRows = 1000, $encodeUtf8 = false) {
+	public static function genPublicLinkParams($dbCfg, $base, $sql, $safeRows = 1000, $encodeUtf8 = false, $extras = null) {
 		if (is_scalar($dbCfg)) {
 			$connections = self::getConnectionsCredentials();
 			$dbCfg = !empty($connections[$dbCfg]) ? $connections[$dbCfg] : null;
@@ -603,6 +603,9 @@ class Api {
 			'safeRows' => $safeRows,
 			'encodeUtf8' => $encodeUtf8,
 		);
+		if (!empty($extras) && (is_array($extras) || is_object($extras))) {
+			$params['extras'] = (array) $extras;
+		}
 		$encryptionType = null;
 		$compressionType = null;
 		$params = serialize($params);
@@ -638,13 +641,22 @@ class Api {
 		if (!$params) {
 			throw new InvalidArgumentException("Parameter 'params' is broken");
 		}
-		return self::query(
+		$resultset = self::query(
 			$params['dbCfg']
 			, $params['base']
 			, $params['sql']
 			, $params['safeRows']
 			, $params['encodeUtf8']
 		);
+		$res = array(
+			'resultset' => $resultset,
+		);
+		if (!empty($params['extras'])) {
+			if (!empty($params['extras']['showSql'])) {
+				$res['sql'] = $params['sql'];
+			}
+		}
+		return $res;
 	}
 }
 
@@ -1162,12 +1174,20 @@ var SERVER = <?= json_encode(array(
 
 <div id="elModalSharePublic" class="modal">
 	<h2 style="margin-top: 0;">Share Public Link</h2>
-	<form class="m-b" id="elSharePublicPreferences">
-		<label>
-			Safe rows:<br />
-			<input name="safeRows" type="number" min="1" step="1">
-		</label>
-		<div class="m-t">
+	<form id="elSharePublicPreferences">
+		<div class="m-b">
+			<label>
+				Safe rows:<br />
+				<input name="safeRows" type="number" min="1" step="1" />
+			</label>
+		</div>
+		<div class="m-b">
+			<label>
+				<input name="showSql" type="checkbox" />
+				Allow to view SQL
+			</label>
+		</div>
+		<div class="m-b">
 			<button type="submit">Get Link</button>
 		</div>
 	</form>
@@ -1184,6 +1204,8 @@ var SERVER = <?= json_encode(array(
 	
 	(function (elModalSharePublic, elSharePublicPreferences, elShareLink) {
 		var elSafeRows = elSharePublicPreferences.querySelector('[name="safeRows"]');
+		var elShowSql = elSharePublicPreferences.querySelector('[name="showSql"]');
+		
 		elQueryShareButton.addEventListener('click', function () {
 			Modal.show(elModalSharePublic);
 		});
@@ -1207,7 +1229,10 @@ var SERVER = <?= json_encode(array(
 			var sql = editor.getValue();
 			var safeRows = elSafeRows.value;
 			var encodeUtf8 = false;
-			return apiCall('genPublicLinkParams', dbCfg, base, sql, safeRows, encodeUtf8).promise
+			var extras = {
+				showSql: elShowSql.checked,
+			};
+			return apiCall('genPublicLinkParams', dbCfg, base, sql, safeRows, encodeUtf8, extras).promise
 				.then(function (res) {
 					elModalSharePublic.classList.remove('loading');
 					var url = new URL('?part=public#!params=' + encodeURIComponent(res.params), document.location.href);
@@ -1508,6 +1533,7 @@ elConnections.addEventListener('change', function (event) {
 });
 elBases.addEventListener('change', function (event) {
 	config.base = getSelectedBase();
+	setTitle(config.base);
 	refreshTables();
 });
 refreshConnections().then(function () {
@@ -2714,6 +2740,10 @@ body.dragover:after {
 }
 .flex-1-auto {
 	flex: 1 auto;
+}
+
+.gone {
+	display: none !important;
 }
 
 #elMainContainer {
@@ -5081,26 +5111,38 @@ var SERVER = <?= json_encode(array(
 #elResultset {
 	overflow: visible;
 }
+#elSql {
+	padding: 1em;
+	overflow: auto;
+}
+#elSqlText {
+	padding-right: inherit;
+	margin-bottom: 0;
+}
 </style>
 </head>
 <body>
 <script src="?part=modal.js"></script>
 <main id="elMain">
+	<section id="elSql" class="gone">
+		<button id="elToggleSqlButton">Toggle SQL</button>
+		<pre id="elSqlText" class="gone"></pre>
+	</section>
 	<section id="elResultset"></section>
 </main>
 <script>
 
 elMain.classList.add('loading');
-var resultset = <?= json_encode(!isset($_GET['params']) ? null : Api::invokePublic($_GET['params'])) ?>;
-Promise.resolve(resultset || apiCall('invokePublic', locationParams.get('params')).promise)
+var res = <?= json_encode(!isset($_GET['params']) ? null : Api::invokePublic($_GET['params'])) ?>;
+Promise.resolve(res || apiCall('invokePublic', locationParams.get('params')).promise)
 	.catch(function (error) {
 		showError(error, true);
 	})
-	.then(function (resultset) {
-		if (!resultset) {
+	.then(function (res) {
+		if (!res || !res.resultset) {
 			return;
 		}
-		showResultset(resultset, {
+		showResultset(res.resultset, {
 			resultCtlButtons: [
 				{
 					html: '&#x1f4c8;',
@@ -5114,11 +5156,20 @@ Promise.resolve(resultset || apiCall('invokePublic', locationParams.get('params'
 				},
 			],
 		});
+		if (res.sql) {
+			elSqlText.textContent = res.sql;
+			elSql.classList.remove('gone');
+		}
 	})
 	.finally(function () {
 		elMain.classList.remove('loading');
 	})
 ;
+
+elToggleSqlButton.addEventListener('click', function (event) {
+	elSqlText.classList.toggle('gone');
+});
+
 </script>
 <?= (new MultipartFile())->getChunk('plugin-blob-value.html.inc')[1] ?>
 
