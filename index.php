@@ -728,32 +728,47 @@ if ($_GET['api']) {
 	die($res);
 }
 elseif ($_GET['part']) {
-	$multipartFile = new MultipartFile();
-	$chunk = $multipartFile->getChunk($_GET['part']);
-	if (!$chunk) {
-		setResponseCode(404);
-		throw new MyError('NOT_FOUND');
-	}
+	$mtime = filemtime(__FILE__);
 	$cacheMaxAge = 3600;
-	$headers = &$chunk[0];
-	$body = &$chunk[1];
-	if (!MultipartFile::filterHeaders($headers, 'Content-Disposition'))
-		$headers[] = "Content-Disposition: inline; filename='" . urlencode($_GET['part']) . "'; name='" . urlencode($_GET['part']) . "'";
-	if (!MultipartFile::filterHeaders($headers, 'Content-Length'))
-		$headers[] = 'Content-Length: ' . strlen($body);
-	if (!MultipartFile::filterHeaders($headers, 'Cache-Control'))
-		$headers[] = "Cache-Control: public, max-age=$cacheMaxAge";
-	if (!MultipartFile::filterHeaders($headers, 'Expires'))
-		$headers[] = 'Expires: ' . date('r', time() + $cacheMaxAge);
-	if (!MultipartFile::filterHeaders($headers, 'Last-Modified'))
-		$headers[] = 'Last-Modified: ' . date('r', filemtime(__FILE__));
-	if (!MultipartFile::filterHeaders($headers, 'Pragma'))
+	$cacheIsValid = false;
+	$headers = [];
+	$body = '';
+	if (!empty($_SERVER['HTTP_IF_MODIFIED_SINCE'])) {
+		$cachedTime = strtotime($_SERVER['HTTP_IF_MODIFIED_SINCE']);
+		$cacheIsValid = $cachedTime && $cachedTime === $mtime;
+	}
+	if ($cacheIsValid) {
+		setResponseCode(304);
+		$headers[] = "Cache-Control: public";
+		$headers[] = 'Last-Modified: ' . date('r', $mtime);
 		$headers[] = 'Pragma: cache';
+	}
+	else {
+		$multipartFile = new MultipartFile();
+		$chunk = $multipartFile->getChunk($_GET['part']);
+		if (!$chunk) {
+			setResponseCode(404);
+			throw new MyError('NOT_FOUND');
+		}
+		$headers = &$chunk[0];
+		$body = &$chunk[1];
+		if (!MultipartFile::filterHeaders($headers, 'Content-Disposition'))
+			$headers[] = "Content-Disposition: inline; filename='" . urlencode($_GET['part']) . "'; name='" . urlencode($_GET['part']) . "'";
+		if (!MultipartFile::filterHeaders($headers, 'Content-Length'))
+			$headers[] = 'Content-Length: ' . strlen($body);
+		if (!MultipartFile::filterHeaders($headers, 'Cache-Control'))
+			$headers[] = "Cache-Control: public";
+		if (!MultipartFile::filterHeaders($headers, 'Expires'))
+			$headers[] = 'Expires: ' . date('r', $mtime);
+		if (!MultipartFile::filterHeaders($headers, 'Last-Modified'))
+			$headers[] = 'Last-Modified: ' . date('r', $mtime);
+		if (!MultipartFile::filterHeaders($headers, 'Pragma'))
+			$headers[] = 'Pragma: cache';
+	}
 	foreach ($headers as $header) {
 		header($header);
 	}
-	echo $body;
-	die();
+	die($body);
 }
 elseif (isset($_GET['source'])) {
 	$source = (new MultipartFile())->getHeadingBlock();
@@ -829,6 +844,24 @@ var SERVER = <?= json_encode(array(
 <script src="?part=lz-string-1.4.4.js"></script>
 <script src="?part=common.js"></script>
 <link rel="stylesheet" href="?part=style.css">
+<style>
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+::-webkit-scrollbar-track {
+	--background: rgba(0,0,0, 0.1);
+}
+::-webkit-scrollbar-thumb {
+	background: rgba(128,128,128, 0.9);
+	border-radius: 1px;
+	background-clip: padding-box;
+	border: rgba(255,255,255,0) 1px solid;
+}
+::-webkit-scrollbar-button {
+	display: none;
+}
+</style>
 </head>
 <body>
 <script src="?part=modal.js"></script>
@@ -2591,24 +2624,6 @@ body.dragover:after {
 	min-width: 50%;
 	max-height: 100%;
 }
-
-::-webkit-scrollbar {
-	width: 8px;
-	height: 8px;
-}
-::-webkit-scrollbar-track {
-	--background: rgba(0,0,0, 0.1);
-}
-::-webkit-scrollbar-thumb {
-	background: rgba(128,128,128, 0.9);
-	border-radius: 1px;
-	background-clip: padding-box;
-	border: rgba(255,255,255,0) 1px solid;
-}
-::-webkit-scrollbar-button {
-	display: none;
-}
-
 
 @media all and (max-width: 30em) {
 	#elAside {
@@ -4920,14 +4935,20 @@ var SERVER = <?= json_encode(array(
 <script src="?part=lz-string-1.4.4.js"></script>
 <script src="?part=common.js"></script>
 <link rel="stylesheet" href="?part=style.css">
+<style>
+#elMain {
+	min-height: 100%;
+}
+#elResultset {
+	overflow: visible;
+}
+</style>
 </head>
 <body>
 <script src="?part=modal.js"></script>
-<div id="elWrapper" class="flex-col">
-	<main id="elMain" class="flex-col flex-1-auto">
-		<section id="elResultset"></section>
-	</main>
-</div>
+<main id="elMain">
+	<section id="elResultset"></section>
+</main>
 <script>
 
 elMain.classList.add('loading');
