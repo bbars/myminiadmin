@@ -436,57 +436,69 @@ class Api {
 		return null;
 	}
 	
-	protected static function getCryptKeyComponents() {
-		$statRoot = stat('/');
-		$statSelf = stat(__FILE__);
-		$serverValueNames = [
-			'DOCUMENT_ROOT',
-			'HOME',
-			'HTTP_HOST',
-			'PHP_SELF',
-			'REQUEST_SCHEME',
-			'SCRIPT_FILENAME',
-			'SERVER_ADDR',
-			'SERVER_NAME',
-			'SERVER_PORT',
-			'SERVER_PROTOCOL',
-			'SERVER_SOFTWARE',
-			'USER',
-		];
-		$serverValues = array();
-		foreach ($serverValueNames as $i => $serverValueName) {
-			$serverValues[$serverValueName] = !isset($_SERVER[$serverValueName]) ? $i : $_SERVER[$serverValueName];
+	protected static function getEncryptionKey() {
+		$keyFile = sys_get_temp_dir() . '/' . self::TMP_FILE_PREFIX . 'key';
+		if (is_file($keyFile)) {
+			return file_get_contents($keyFile);
 		}
-		$hwaddr = null;
-		if (function_exists('shell_exec')) {
-			$ifconfig = @shell_exec('ifconfig');
-			if (preg_match('/\b(ether|hwaddr)\s+([\da-f:-]+)/i', $ifconfig, $m)) {
-				$hwaddr = strtolower($m[2]);
+		$key = null;
+		if (function_exists('openssl_random_pseudo_bytes')) {
+			$key = openssl_random_pseudo_bytes(0xff);
+		}
+		else if (function_exists('mcrypt_create_iv')) {
+			$key = mcrypt_create_iv(0xff);
+		}
+		else {
+			$key = '';
+			while (strlen($key) < 0xff) {
+				$key .= sha1(microtime() . '|' . rand() . '|' . file_get_contents(__FILE__), true);
 			}
+			$key = substr($key, 0, 0xff);
 		}
+		if (!$key) {
+			return null;
+		}
+		$success = file_put_contents($keyFile, $key);
+		if (!$success) {
+			throw new Exception("Unable to store key");
+		}
+		return $key;
+	}
+	
+	public static function resetEncryptionKey($dbCfg) {
+		if (!self::checkAdministrationPrivileges($dbCfg)) {
+			return null;
+		}
+		$keyFile = sys_get_temp_dir() . '/' . self::TMP_FILE_PREFIX . 'key';
+		return unlink($keyFile);
+	}
+	
+	public static function getEncryptionKeyInfo($dbCfg) {
+		if (!self::checkAdministrationPrivileges($dbCfg)) {
+			return null;
+		}
+		$keyFile = sys_get_temp_dir() . '/' . self::TMP_FILE_PREFIX . 'key';
+		if (!is_file($keyFile)) {
+			return null;
+		}
+		$keyHash = sha1_file($keyFile);
+		$keyHash = array_map('hexdec', str_split($keyHash, 4));
+		for ($i = count($keyHash) - 1; $i > 0; $i--) {
+			$keyHash[$i - 1] ^= $keyHash[$i];
+		}
+		$keyHash = dechex(array_shift($keyHash));
 		return array(
-			'hostname' => gethostname(),
-			'hwaddr' => $hwaddr,
-			'rootInode' => $statRoot['ino'],
-			'rootDev' => $statRoot['dev'],
-			'rootRdev' => $statRoot['rdev'],
-			'selfDev' => $statSelf['dev'],
-			'selfRdev' => $statSelf['rdev'],
-			'serverValues' => $serverValues,
+			'size' => filesize($keyFile),
+			'time' => date('c', filemtime($keyFile)),
+			'hash' => $keyHash,
 		);
 	}
 	
-	protected static function getCryptKey() {
-		$a = serialize(self::getCryptKeyComponents());
-		$b = ['', ''];
-		for ($i = strlen($a) - 1; $i >= 0; $i--) {
-			$b[$i % 2] .= sha1(chr($i) . $a[$i], true);
-		}
-		return sha1($b[0], true) . sha1($b[1], true);
-	}
-	
 	protected static function encryptBytes($data, &$type = null) {
-		$key = self::getCryptKey();
+		$key = self::getEncryptionKey();
+		if (!$key) {
+			throw new Exception("Unable to encrypt: key is empty");
+		}
 		$data = pack('L', strlen($data)) . $data;
 		
 		if (($type === 1 || !$type) && function_exists('openssl_encrypt')) {
@@ -517,7 +529,7 @@ class Api {
 			throw new Exception("Unable to decrypt: data is empty");
 		}
 		$data = (string) $data;
-		$key = self::getCryptKey();
+		$key = self::getEncryptionKey();
 		$type = ord($data[0]);
 		$data = substr($data, 1);
 		
@@ -592,11 +604,19 @@ class Api {
 			'encodeUtf8' => $encodeUtf8,
 		);
 		$encryptionType = null;
+		$compressionType = null;
 		$params = serialize($params);
-		$params = self::compressBytes($params);
+		$uncompressedSize = strlen($params);
+		$params = self::compressBytes($params, $compressionType);
+		$compressedSize = strlen($params);
 		$params = self::encryptBytes($params, $encryptionType);
 		$params = base64_encode($params);
-		return [$encryptionType, $params];
+		return array(
+			'params' => $params,
+			'encrypted' => $encryptionType,
+			'compressed' => $compressionType,
+			'compressionFactor' => $uncompressedSize / $compressedSize,
+		);
 	}
 	
 	public static function invokePublic($params) {
@@ -887,7 +907,11 @@ var SERVER = <?= json_encode(array(
 		<main id="elMain" class="flex-col flex-1-auto">
 			<div id="elQueryContainer">
 				<div id="elQuery"></div>
-				<button id="elQueryExecButton">Execute</button>
+				<div id="elQueryCtl" class="hide-disappearing" title="Execute SQL&#x10;(See the context menu: there are more commands)">
+					<button id="elQuerySaveButton" class="disappearing">Save SQL</button>
+					<button id="elQueryShareButton" class="disappearing">Share Results</button>
+					<button id="elQueryExecButton">&#x25B6;</button>
+				</div>
 			</div>
 			<!-- <textarea></textarea> -->
 			<div class="splitter"></div>
@@ -991,7 +1015,7 @@ var SERVER = <?= json_encode(array(
 		<div class="--m-b">
 			Version code:
 			<span class="m-r"><?= Api::getAppVersionCode() ?: 'N/A' ?></span>
-			<span id="elUpdateAppButton" class="btn hidden">Update</span>
+			<span id="elUpdateAppButton" class="btn hidden">Update App</span>
 		</div>
 	</div>
 	<script>
@@ -1132,6 +1156,79 @@ var SERVER = <?= json_encode(array(
 			});
 		};
 	})(this, elModalSqlValues, elSqlValuesForm, elSqlValuesSet);
+	
+	</script>
+</div>
+
+<div id="elModalSharePublic" class="modal">
+	<h2 style="margin-top: 0;">Share Public Link</h2>
+	<form class="m-b" id="elSharePublicPreferences">
+		<label>
+			Safe rows:<br />
+			<input name="safeRows" type="number" min="1" step="1">
+		</label>
+		<div class="m-t">
+			<button type="submit">Get Link</button>
+		</div>
+	</form>
+	<div class="m-t">
+		<input id="elShareLink" type="url" readonly="readonly" autofocus="autofocus" style="width: 100%">
+	</div>
+	<div class="m-t">
+		<small>
+			This URL contains currently used connection credentials and SQL-query (all of these parameters are <b>encrypted</b>).<br />
+			SQL will execute every time URL is opened.
+		</small>
+	</div>
+	<script>
+	
+	(function (elModalSharePublic, elSharePublicPreferences, elShareLink) {
+		var elSafeRows = elSharePublicPreferences.querySelector('[name="safeRows"]');
+		elQueryShareButton.addEventListener('click', function () {
+			Modal.show(elModalSharePublic);
+		});
+		elSharePublicPreferences.addEventListener('submit', function (event) {
+			event.preventDefault();
+			showLink();
+			return false;
+		});
+		elModalSharePublic.addEventListener('modal-show', function (event) {
+			elSafeRows.value = config.safeRows;
+			showLink();
+		});
+		
+		function showLink() {
+			elModalSharePublic.classList.add('loading');
+			elShareLink.value = '';
+			elShareLink.disabled = true;
+			
+			var dbCfg = elConnections.value;
+			var base = getSelectedBase();
+			var sql = editor.getValue();
+			var safeRows = elSafeRows.value;
+			var encodeUtf8 = false;
+			return apiCall('genPublicLinkParams', dbCfg, base, sql, safeRows, encodeUtf8).promise
+				.then(function (res) {
+					elModalSharePublic.classList.remove('loading');
+					var url = new URL('?part=public#!params=' + encodeURIComponent(res.params), document.location.href);
+					elShareLink.disabled = false;
+					elShareLink.value = url.toString();
+					elShareLink.focus();
+					if (elShareLink.select) {
+						elShareLink.select();
+					}
+					if (navigator.share) {
+						navigator.share({
+							url: url,
+						});
+					}
+				})
+				.finally(function () {
+					elModalSharePublic.classList.remove('loading');
+				})
+			;
+		}
+	})(elModalSharePublic, elSharePublicPreferences, elShareLink);
 	
 	</script>
 </div>
@@ -1471,10 +1568,21 @@ editor.addEventListener('keyup', function (event) {
 		executeQuery(sql);
 	}
 });
+elQueryCtl.addEventListener('contextmenu', function (event) {
+	event.preventDefault();
+	event.stopPropagation();
+	elQueryCtl.classList.toggle('hide-disappearing');
+});
+elQueryCtl.addEventListener('click', function (event) {
+	elQueryCtl.classList.add('hide-disappearing');
+});
 elQueryExecButton.addEventListener('click', function () {
 	var sql = editor.getValue();
 	locationParams.set('sql', sql);
 	executeQuery(sql);
+});
+elQuerySaveButton.addEventListener('click', function () {
+	saveSqlFile();
 });
 editor.addEventListener('change', function (event) {
 	config.query = editor.getValue();
@@ -1540,21 +1648,29 @@ elMain.addEventListener('touchend', onSplitterUp);
 document.addEventListener('keydown', function (event) {
 	if (event.keyCode == 83 && event.ctrlKey && !event.shiftKey && !event.altKey) {
 		event.preventDefault();
-		
-		var value = editor.getValue();
-		if (!value.trim())
-			return false;
-		
-		var name = (value.split(/\s/, 2)[0] || '').trim().toLowerCase();
-		var d = new Date();
-		var blob = new Blob([value], {type: 'text/sql'});
-		var a = document.createElement('a');
-		a.download = getSelectedBase().toLowerCase() + (name ? '-' + name : '') + '-' + (d.getTime() / 1000 | 0) + '.sql';
-		a.href = URL.createObjectURL(blob);
-		a.click();
-		return false;
+		saveSqlFile();
 	}
 }, false);
+
+function saveSqlFile(value) {
+	value = value || editor.getValue();
+	if (!value.trim())
+		return false;
+	
+	var d = new Date();
+	var name = [
+		(getSelectedBase() || '').toLowerCase(),
+		(value.trim().split(/\s/, 2)[0] || '').trim().toLowerCase(),
+		(d.getTime() / 1000 | 0),
+	].filter(Boolean).join('-') + '.sql';
+	
+	var blob = new Blob([value], { type: 'text/sql' });
+	var a = document.createElement('a');
+	a.download = name;
+	a.href = URL.createObjectURL(blob);
+	a.click();
+	return false;
+}
 
 elQuery.addEventListener('dragstart', function (event) {
 	elQuery.dragging = true;
@@ -1683,7 +1799,6 @@ document.addEventListener('drop', function (event) {
 })();
 
 </script>
-<link rel="stylesheet" href="?part=style">
 </body>
 </html>
 
@@ -2693,6 +2808,8 @@ input[type=checkbox] {
 }
 
 input[type=text],
+input[type=number],
+input[type=url],
 select,
 textarea {
 	border: #cb9 1px solid;
@@ -2811,7 +2928,7 @@ textarea:focus {
 #elMain {
 	position: relative;
 }
-#elMain.loading:after {
+.loading:after {
 	position: absolute;
 	content: '';
 	left: 0;
@@ -2859,7 +2976,7 @@ textarea:focus {
 	border-radius: 0;
 }
 
-#elQueryExecButton {
+#elQueryCtl {
 	position: absolute;
 	right: 0;
 	bottom: 0;
@@ -2867,6 +2984,18 @@ textarea:focus {
 	border-radius: 0.5em 0 0 0;
 	border: none;
 	box-shadow: #141414 -0.1em -0.1em 0.1em 0.1em, rgba(0,0,0, 0.1) -0.1em -0.1em 1em inset;
+	display: flex;
+	overflow: hidden;
+}
+#elQueryCtl > * {
+	border-radius: 0;
+	border-style: none;
+}
+#elQueryCtl > * + * {
+	border-left-style: solid;
+}
+#elQueryCtl.hide-disappearing > .disappearing {
+	display: none;
 }
 
 #elResultset {
@@ -3111,6 +3240,7 @@ table.result tbody tr > .value-shortened:after {
 
 .modal {
 	display: none;
+	position: relative;
 }
 .modal-stack {
 	display: none;
