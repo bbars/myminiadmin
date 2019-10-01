@@ -877,20 +877,20 @@ var SERVER = <?= json_encode(array(
 <script src="?part=common.js"></script>
 <link rel="stylesheet" href="?part=style.css">
 <style>
-::-webkit-scrollbar {
+#elMainContainer ::-webkit-scrollbar {
 	width: 8px;
 	height: 8px;
 }
-::-webkit-scrollbar-track {
+#elMainContainer ::-webkit-scrollbar-track {
 	--background: rgba(0,0,0, 0.1);
 }
-::-webkit-scrollbar-thumb {
+#elMainContainer ::-webkit-scrollbar-thumb {
 	background: rgba(128,128,128, 0.9);
 	border-radius: 1px;
 	background-clip: padding-box;
 	border: rgba(255,255,255,0) 1px solid;
 }
-::-webkit-scrollbar-button {
+#elMainContainer ::-webkit-scrollbar-button {
 	display: none;
 }
 </style>
@@ -1533,6 +1533,7 @@ elConnections.addEventListener('change', function (event) {
 });
 elBases.addEventListener('change', function (event) {
 	config.base = getSelectedBase();
+	locationParams.set('base', config.base);
 	setTitle(config.base);
 	refreshTables();
 });
@@ -2058,12 +2059,18 @@ function Tinychart(container) {
 		'svg.move': {
 			'cursor': '-webkit-grabbing !important',
 		},
+		'svg.move *': {
+			'transition': 'none !important',
+		},
 		'.chart[data-type=line]': {
 			'transition': 'all 0.1s ease',
 		},
 		'.chart-x-axis': {
 			'stroke': '#ccc',
 			'stroke-width': 1,
+		},
+		'.chart-x-axis.dashed': {
+			'stroke-dasharray': '10 10',
 		},
 		'.chart[data-type=line] > g > path': {
 			'stroke-linecap': 'round',
@@ -2292,14 +2299,18 @@ function Tinychart(container) {
 			}
 		}
 		
+		var xAxisPy = perc(0, _yMin, _yMax);
+		pXAxis.classList.toggle('dashed', xAxisPy < 0 || xAxisPy > 100);
+		pXAxis.setAttribute('d', 'M 0 ' + Math.max(0, Math.min(xAxisPy || 0, 100)) + ' h 100');
+		
 		this.svg.appendChild(gChart);
 		var bbox = gChart.getBBox();
 		bbox = gChart.getBBox();
 		this.svg.setAttributeNS(null, 'viewBox', [
-		    bbox.x - _safeFrame,
-		    bbox.y - _safeFrame,
-		    (bbox.width + 2*_safeFrame) || 1,
-		    (bbox.height + 2*_safeFrame) || 1,
+			bbox.x - _safeFrame,
+			bbox.y - _safeFrame,
+			(bbox.width + 2*_safeFrame) || 1,
+			(bbox.height + 2*_safeFrame) || 1,
 		].join(' '));
 		this.scaleX(1, 0.5);
 		setTimeout(function () {
@@ -2310,9 +2321,9 @@ function Tinychart(container) {
 	};
 	
 	this.getRealX = function (x) {
-	    var sf = _safeFrame / 100;
-	    x = x / (1 - (2*sf)) - sf;
-	    return x / _scaleX + _originX / _scaleX * (_scaleX-1);
+		var sf = _safeFrame / 100;
+		x = x / (1 - (2*sf)) - sf;
+		return x / _scaleX + _originX / _scaleX * (_scaleX-1);
 	};
 	
 	var _hovered = null;
@@ -2324,7 +2335,7 @@ function Tinychart(container) {
 		}
 		_hovered = null;
 		if (rx === undefined || rx === null || rx === false)
-		    return;
+			return;
 		rx = Math.max(0, Math.min(+rx, 1));
 		var xIndex = -1;
 		if (_type == 'col') {
@@ -3795,7 +3806,7 @@ function getSelectedBase() {
 	if (typeof elBases === 'undefined') {
 		return null;
 	}
-	return elBases.value || config.base;
+	return elBases.value || locationParams.get('base') || config.base;
 }
 
 function refreshConnections(selectedConnection) {
@@ -3829,7 +3840,7 @@ function createNewConnection() {
 				.then(function (newConnectionId) {
 					refreshConnections(newConnectionId)
 						.then(function () {
-							return refreshBases(config.base);
+							return refreshBases(locationParams.get('base') || config.base);
 						})
 						.then(function () {
 							editor.focus();
