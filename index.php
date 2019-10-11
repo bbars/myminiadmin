@@ -3922,7 +3922,7 @@ function refreshTables() {
 			div.value = table;
 			div.dataset.table = table;
 			var a = document.createElement('a');
-			a.href = '#!exec&sql=SELECT * FROM `' + backtickEscape(table) + '`;';
+			a.href = '#!exec&base=' + encodeURIComponent(selectedBase) + '&sql=SELECT * FROM `' + encodeURIComponent(backtickEscape(table)) + '`;';
 			a.textContent = table;
 			div.appendChild(a);
 			elTables.appendChild(div);
