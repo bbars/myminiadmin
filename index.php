@@ -4698,16 +4698,39 @@ Content-Type: text/html; charset="utf-8"
 			}
 		}
 		
-		elResultset.addEventListener('click', function (event) {
-			if (!event.ctrlKey || !bigValuesRe.test(event.target.dataset.type))
+		function showValueForTd(td) {
+			if (!td || !bigValuesRe.test(td.dataset.type || ''))
 				return;
-			var td = event.target;
 			elModalBlobValue.__td = td;
-			
 			elModalBlobValueTitle.textContent = td.dataset.name + ' (' + td.dataset.type + ')';
 			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
-			
 			Modal.show(elModalBlobValue);
+		}
+		
+		elResultset.addEventListener('click', function (event) {
+			if (!event.ctrlKey)
+				return;
+			showValueForTd(event.target);
+		});
+		
+		var lastTap = null;
+		elResultset.addEventListener('touchstart', function (event) {
+			var td = event.target;
+			var now = (new Date()).getTime();
+			if (!lastTap) {
+				lastTap = {
+					td: td,
+					time: now,
+				};
+				return;
+			}
+			if (lastTap.td !== td || now - lastTap.time > 300) {
+				lastTap = null;
+				return;
+			}
+			event.preventDefault();
+			showValueForTd(td);
+			lastTap = null;
 		});
 		
 		elModalBlobValue.addEventListener('change', function (event) {
