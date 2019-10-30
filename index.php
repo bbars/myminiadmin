@@ -174,6 +174,15 @@ class Api {
 		return json_decode(file_get_contents('php://input'), true);
 	}
 	
+	public static function getClientTimeZone() {
+		$timeZoneOffset = (int) (isset($_COOKIE['timeZoneOffset']) ? $_COOKIE['timeZoneOffset'] : 0);
+		$o = $timeZoneOffset > 0 ? '-' : '+';
+		$timeZoneOffset = abs($timeZoneOffset | 0);
+		$m = $timeZoneOffset % 60;
+		$h = $timeZoneOffset / 60 | 0;
+		return sprintf("%s%'02d:%'02d", $o, $h, $m);
+	}
+	
 	protected static function getDb($cfg, $base = null) {
 		if (is_scalar($cfg)) {
 			$connections = self::getConnectionsCredentials();
@@ -211,7 +220,9 @@ class Api {
 			default:
 				throw new MyError('MYSQL_CONNECT_ERROR', "Connection could not be established: #{$mysqli->connect_errno} {$mysqli->connect_error}");
 		}
-		$mysqli->query("SET NAMES 'utf8'");
+		$timeZone = self::getClientTimeZone();
+		header("X-Mysql-Timezone: $timeZone");
+		$mysqli->multi_query("SET NAMES 'utf8', time_zone = '$timeZone'");
 		return $mysqli;
 	}
 	
@@ -3697,6 +3708,10 @@ function quotEscape(s) {
 quotEscape.re = /(['"])/g;
 
 function apiCall(fn, params) {
+	if (!/timeZoneOffset=(-?\d+)/.test(document.cookie)) {
+		var d = new Date(9999999999999);
+		document.cookie = 'timeZoneOffset=' + d.getTimezoneOffset() + '; expires=' + d.toGMTString();
+	}
 	var apiCallArguments = Array.prototype.slice.call(arguments, 0);
 	params = Array.prototype.slice.call(apiCallArguments, 0);
 	params.shift();
