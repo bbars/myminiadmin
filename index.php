@@ -650,10 +650,20 @@ class Api {
 		);
 		$res = array(
 			'resultset' => $resultset,
+			'sql' => null,
+			'title' => null,
 		);
 		if (!empty($params['extras'])) {
 			if (!empty($params['extras']['showSql'])) {
 				$res['sql'] = $params['sql'];
+			}
+			if (!empty($params['extras']['title'])) {
+				$res['title'] = $params['title'];
+			}
+		}
+		if (!$res['title']) {
+			if (preg_match('/^[\s\n--]*--\s*(.+)/', $res['sql'], $m)) {
+				$res['title'] = $m[1];
 			}
 		}
 		return $res;
@@ -1012,12 +1022,18 @@ var SERVER = <?= json_encode(array(
 </div>
 <div id="elModalPreferences" class="modal">
 	<h2 style="margin-top: 0">Preferences</h2>
-	<div class="m-b">
-		<label>
-			Safe rows:<br />
-			<input id="elConfig_safeRows" type="number" min="1" step="1">
-		</label>
-	</div>
+	<form id="elConfigForm">
+		<div class="m-b">
+			<label>
+				Safe rows:<br />
+				<input id="elConfig_safeRows" type="number" min="1" step="1">
+			</label>
+		</div>
+		<div>
+			<button type="submit">Save</button>
+		</div>
+	</form>
+	
 	<h2>About MyMiniAdmin</h2>
 	<div class="--m-b">
 		<p>
@@ -1032,7 +1048,7 @@ var SERVER = <?= json_encode(array(
 	</div>
 	<script>
 	
-	(function (elModalPreferences) {
+	(function (elModalPreferences, elConfigForm) {
 		elPreferencesButton.addEventListener('click', function () {
 			Modal.show(elModalPreferences);
 		});
@@ -1042,8 +1058,9 @@ var SERVER = <?= json_encode(array(
 		elModalPreferences.addEventListener('modal-hide', function (event) {
 			/**/
 		});
-		elConfig_safeRows.addEventListener('change', function (event) {
+		elConfigForm.addEventListener('submit', function (event) {
 			config.safeRows = +elConfig_safeRows.value;
+			Modal.hide(elModalPreferences);
 		});
 		elUpdateAppButton.addEventListener('click', function () {
 			if (!confirm("Are you sure?")) {
@@ -1085,7 +1102,7 @@ var SERVER = <?= json_encode(array(
 			;
 		});
 		
-	})(elModalPreferences);
+	})(elModalPreferences, elConfigForm);
 	
 	</script>
 </div>
@@ -1192,7 +1209,7 @@ var SERVER = <?= json_encode(array(
 		</div>
 	</form>
 	<div class="m-t">
-		<input id="elShareLink" type="url" readonly="readonly" autofocus="autofocus" style="width: 100%">
+		<a href="#" id="elShareLink" autofocus="autofocus">#</a>
 	</div>
 	<div class="m-t">
 		<small>
@@ -1200,6 +1217,16 @@ var SERVER = <?= json_encode(array(
 			SQL will execute every time URL is opened.
 		</small>
 	</div>
+	<style>
+	#elShareLink {
+		text-decoration: none;
+		word-break: break-all
+	}
+	#elShareLink.elShareLink-dirty {
+		/*text-decoration: line-through;*/
+		color: #666;
+	}
+	</style>
 	<script>
 	
 	(function (elModalSharePublic, elSharePublicPreferences, elShareLink) {
@@ -1214,6 +1241,9 @@ var SERVER = <?= json_encode(array(
 			showLink();
 			return false;
 		});
+		elSharePublicPreferences.addEventListener('change', function (event) {
+			elShareLink.classList.add('elShareLink-dirty');
+		});
 		elModalSharePublic.addEventListener('modal-show', function (event) {
 			elSafeRows.value = config.safeRows;
 			showLink();
@@ -1221,8 +1251,8 @@ var SERVER = <?= json_encode(array(
 		
 		function showLink() {
 			elModalSharePublic.classList.add('loading');
-			elShareLink.value = '';
 			elShareLink.disabled = true;
+			elShareLink.href = '#';
 			
 			var dbCfg = elConnections.value;
 			var base = getSelectedBase();
@@ -1236,12 +1266,12 @@ var SERVER = <?= json_encode(array(
 				.then(function (res) {
 					elModalSharePublic.classList.remove('loading');
 					var url = new URL('?part=public#!params=' + encodeURIComponent(res.params), document.location.href);
+					elShareLink.classList.remove('elShareLink-dirty');
 					elShareLink.disabled = false;
-					elShareLink.value = url.toString();
-					elShareLink.focus();
-					if (elShareLink.select) {
-						elShareLink.select();
-					}
+					elShareLink.href = elShareLink.textContent = url.toString();
+					setTimeout(function () {
+						elShareLink.focus();
+					}, 100);
 					if (navigator.share) {
 						navigator.share({
 							url: url,
@@ -1978,12 +2008,19 @@ Content-Type: application/javascript; charset="utf-8"
 	};
 	
 	function closingTriggerListener(event) {
-		if ((event.type == 'click' && event.target === modalStack) || event.keyCode == 27) {
+		if (event.type === 'mousedown') {
+			closingTriggerListener.clicking = event.target === modalStack;
+		}
+		else if (event.type === 'mouseup' && event.target !== modalStack) {
+			closingTriggerListener.clicking = false;
+		}
+		else if ((event.type === 'mouseup' && closingTriggerListener.clicking) || event.keyCode == 27) {
 			Modal.hide();
 			focusModal(Modal.get());
 		}
 	}
-	modalStack.addEventListener('click', closingTriggerListener);
+	modalStack.addEventListener('mousedown', closingTriggerListener);
+	document.body.addEventListener('mouseup', closingTriggerListener);
 	document.body.addEventListener('keyup', closingTriggerListener);
 })();
 //</script>
@@ -3174,12 +3211,14 @@ table.result tbody tr > * {
 	text-overflow: ellipsis;
 	overflow: hidden;
 }
-table.result[data-orgtables]:before {
-	content: attr(data-orgtables);
-	display: table-caption;
+table.result caption {
+	text-align: left;
 	padding: 0 0.68em 0.5em;
 	color: #999;
 	font-size: 0.85em;
+}
+table.result.result-safe-cut .result-row-len {
+	color: #f90;
 }
 #elResultset table.result tbody tr > *:hover {
 	outline: rgba(128,128,128, 0.2) 2px solid;
@@ -4194,6 +4233,7 @@ function createTableFromResult(result) {
 	var table = document.createElement('table');
 	table.classList.add('result');
 	table.__result = result;
+	var caption = document.createElement('caption');
 	var thead = document.createElement('thead');
 	var tbody = document.createElement('tbody');
 	var tr = document.createElement('tr');
@@ -4227,15 +4267,17 @@ function createTableFromResult(result) {
 	}
 	orgtables = Object.keys(orgtables);
 	table.dataset.orgtables = orgtables.join(', ');
+	caption.textContent = orgtables.join(', ') + ' ';
 	
 	thead.appendChild(tr);
 	
 	if (result.safeCut) {
-		var tr = document.createElement('tr');
-		tr.classList.add('safe-cut');
-		tr.innerHTML = '<td colspan="' + fieldsCount + '">Safe cut: there are more rows (>' + result.safeRows + ')</td>';
-		tbody.appendChild(tr);
+		table.classList.add('result-safe-cut');
 	}
+	var elRowLen = document.createElement('span');
+	elRowLen.className = 'result-row-len';
+	elRowLen.textContent = '(rows ' + (result.safeCut ? '> ' + result.safeRows : '= ' + result.rows.length) + ')';
+	caption.appendChild(elRowLen);
 	
 	var bigValuesRe = /(BLOB|STRING|ENUM|SET|GEOMETRY|JSON)$/i;
 	var urlValueRe = /^(?:[a-z]+:|file:\/)\/\/[^\s/]+\S*$/;
@@ -4288,6 +4330,7 @@ function createTableFromResult(result) {
 	else {
 		appendRowsChunk();
 	}
+	table.appendChild(caption);
 	table.appendChild(thead);
 	table.appendChild(tbody);
 	return table;
@@ -5193,6 +5236,9 @@ Promise.resolve(res || apiCall('invokePublic', locationParams.get('params')).pro
 		if (res.sql) {
 			elSqlText.textContent = res.sql;
 			elSql.classList.remove('gone');
+		}
+		if (res.title) {
+			setTitle(res.title);
 		}
 	})
 	.finally(function () {
