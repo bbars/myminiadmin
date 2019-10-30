@@ -662,7 +662,7 @@ class Api {
 			}
 		}
 		if (!$res['title']) {
-			if (preg_match('/^[\s\n--]*--\s*(.+)/', $res['sql'], $m)) {
+			if (preg_match('/^[\s\n--]*--\s*(.+)/', $params['sql'], $m)) {
 				$res['title'] = $m[1];
 			}
 		}
@@ -5182,6 +5182,10 @@ var SERVER = <?= json_encode(array(
 <script src="?part=common.js"></script>
 <link rel="stylesheet" href="?part=style.css">
 <style>
+h1 {
+	margin: 1rem 0 1rem;
+	padding: 0 1rem;
+}
 #elMain {
 	min-height: 100%;
 }
@@ -5189,8 +5193,8 @@ var SERVER = <?= json_encode(array(
 	overflow: visible;
 }
 #elSql {
-	padding: 1em;
-	overflow: auto;
+	padding: 1rem;
+	/*overflow: auto;*/
 }
 #elSqlText {
 	padding-right: inherit;
@@ -5239,6 +5243,9 @@ Promise.resolve(res || apiCall('invokePublic', locationParams.get('params')).pro
 		}
 		if (res.title) {
 			setTitle(res.title);
+			var h1 = document.createElement('h1');
+			h1.textContent = res.title;
+			elMain.insertBefore(h1, elMain.children[0]);
 		}
 	})
 	.finally(function () {
