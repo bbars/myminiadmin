@@ -3992,11 +3992,9 @@ function refreshTables() {
 				var name = row[1];
 				var params = row[2] && row[2].split('|') || [];
 				params = params.map(function (v, i) {
-					return '${' + (i+1) + ':' + v + '}';
+					return '${' + (i+2) + ':' + v + '}';
 				});
-				var snippet = name + '(' + params.join(', ') + ')';
-				if (type.toLowerCase() == 'procedure')
-					snippet = 'CALL ' + snippet + ';';
+				var snippet = name + '${1:(' + params.join(', ') + ')}';
 				editor.addSnippet(name, snippet);
 			}
 		}
