@@ -361,7 +361,7 @@ class Api {
 		$config = self::getConfig();
 		$connections = $config['connections'];
 		if (!empty($_SESSION['connections']))
-			$connections = array_merge($connections, $_SESSION['connections']);
+			$connections = $connections + $_SESSION['connections'];
 		$connections = array_map('self::normDbCfg', $connections);
 		return $connections;
 	}
@@ -371,7 +371,7 @@ class Api {
 		foreach ($connections as &$connection)
 			$connection['pass'] = null;
 		unset($connection);
-		return $connections;
+		return (object) $connections;
 	}
 	
 	public static function stat($dbCfg, $showProcesslist = false) {
