@@ -3145,8 +3145,13 @@ table.result tbody tr:hover {
 }
 table.result tbody tr > * {
 	border-color: #f3f3f3 #eee;
-	max-width: 40em;
 	word-wrap: inherit;
+}
+table.result tbody tr > td > pre {
+	margin: 0;
+	padding: 0;
+	word-wrap: inherit;
+	max-width: 40em;
 	text-overflow: ellipsis;
 	overflow: hidden;
 }
@@ -3218,7 +3223,7 @@ table.result * tr.empty > td {
 	color: #900;
 }
 
-table.result tbody tr > .value-shortened:after {
+table.result tbody tr > td > pre.value-shortened:after {
 	content: '\27f6';
 	color: #000;
 	font-weight: 600;
@@ -4240,11 +4245,18 @@ function createTableFromResult(result) {
 				td.dataset.y = y;
 				td.dataset.name = result.fields[x].name;
 				td.__value = value;
-				if (value && bigValuesRe.test(type) && value.length > (SHORTEN_LENGTH + 3)) {
-					value = value.substr(0, SHORTEN_LENGTH);
-					td.className += ' value-shortened';
+				if (value && bigValuesRe.test(type)) {
+					var pre = document.createElement('pre');
+					if (value.length > (SHORTEN_LENGTH + 3)) {
+						value = value.substr(0, SHORTEN_LENGTH);
+						pre.className += ' value-shortened';
+					}
+					pre.textContent = value;
+					td.appendChild(pre);
 				}
-				td.textContent = value;
+				else {
+					td.textContent = value;
+				}
 				if (urlValueRe.test(value)) {
 					var a = document.createElement('a');
 					a.className = 'value-link';
@@ -4694,12 +4706,12 @@ Content-Type: text/html; charset="utf-8"
 		elResultset.addEventListener('click', function (event) {
 			if (!event.ctrlKey)
 				return;
-			showValueForTd(event.target);
+			showValueForTd(event.target.closest('td'));
 		});
 		
 		var lastTap = null;
 		elResultset.addEventListener('touchstart', function (event) {
-			var td = event.target;
+			var td = event.target.closest('td');
 			var now = (new Date()).getTime();
 			if (!lastTap) {
 				lastTap = {
