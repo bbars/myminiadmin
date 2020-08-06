@@ -884,7 +884,7 @@ X-Execute: On
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, minimum-scale=1, initial-scale=1, shrink-to-fit=no">
-<link rel="shortcut icon" href="?part=favicon-16.png" type="image/png">
+<link rel="shortcut icon" href="?part=favicon-16.svg" type="image/svg">
 <title>MyMiniAdmin</title>
 <script>
 var SERVER = <?= json_encode(array(
@@ -1040,6 +1040,13 @@ var SERVER = <?= json_encode(array(
 				<input id="elConfig_safeRows" type="number" min="1" step="1">
 			</label>
 		</div>
+		<div class="m-b">
+			<label>
+				Icon color:<br />
+				<input id="elConfig_iconColor" type="text">
+				<img id="elConfig_iconColor_preview" src="?part=favicon-16.svg" width="16" height="16" style="vertical-align: middle">
+			</label>
+		</div>
 		<div>
 			<button type="submit">Save</button>
 		</div>
@@ -1065,12 +1072,22 @@ var SERVER = <?= json_encode(array(
 		});
 		elModalPreferences.addEventListener('modal-show', function (event) {
 			elConfig_safeRows.value = config.safeRows;
+			elConfig_iconColor.value = config.iconColor;
+			setIconColor(config.iconColor, elConfig_iconColor_preview);
 		});
 		elModalPreferences.addEventListener('modal-hide', function (event) {
 			/**/
 		});
+		
+		elConfig_iconColor.addEventListener('input', function (event) {
+			setIconColor(elConfig_iconColor.value.trim(), elConfig_iconColor_preview);
+		});
+		
 		elConfigForm.addEventListener('submit', function (event) {
+			event.preventDefault();
 			config.safeRows = +elConfig_safeRows.value;
+			config.iconColor = elConfig_iconColor.value;
+			setIconColor(config.iconColor);
 			Modal.hide(elModalPreferences);
 		});
 		elUpdateAppButton.addEventListener('click', function () {
@@ -1113,6 +1130,38 @@ var SERVER = <?= json_encode(array(
 			;
 		});
 		
+		function setIconColor(iconColor, el) {
+			iconColor = (iconColor || '').toString().trim();
+			if (!el) {
+				el = document.head.querySelector('link[rel="shortcut icon"]');
+			}
+			
+			var tempDiv = document.createElement('div');
+			tempDiv.style.color = '';
+			tempDiv.style.color = iconColor;
+			var err = iconColor && !tempDiv.style.color ? "Invalid color" : null;
+			if (elConfig_iconColor.setCustomValidity) {
+				elConfig_iconColor.setCustomValidity(err || '');
+			}
+			else {
+				elConfig_iconColor.title = err;
+			}
+			if (err) {
+				throw err;
+			}
+			
+			var url = new URL(el.href || el.src);
+			url.searchParams.set('color', iconColor || '');
+			if (el.href) {
+				el.href = url;
+			}
+			else {
+				el.src = url;
+			}
+			return url;
+		}
+		
+		setIconColor(config.iconColor);
 	})(elModalPreferences, elConfigForm);
 	
 	</script>
@@ -2454,12 +2503,33 @@ function Tinychart(container) {
 
 -- ################################################################################################
 
-Name: favicon-16.png
-Content-Type: image/png
-Content-Disposition: inline; filename='favicon-16.png'
+Name: favicon-16.svg
+Content-Type: image/svg+xml
+Content-Disposition: inline; filename='favicon-16.svg'
 X-Execute: On
 
-<?= base64_decode('iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAIGNIUk0AAHolAACAgwAA+f8AAIDpAAB1MAAA6mAAADqYAAAXb5JfxUYAAAA/SURBVHjaYgy0Uz/MwMBgw0AeOMIQaKf+HwaQ2cgAnzgTA4WAMdBO/T9FJox6YdQLw8cLlGTnowAAAAD//wMAM2UdG0+yL9AAAAAASUVORK5CYII=') ?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16px" height="16px">
+	<rect fill="<?= empty($_GET['color']) ? '#513e27' : htmlspecialchars($_GET['color']) ?>" x="0" y="0" width="16" height="16" rx="1" ry="1"/>
+	<g xmlns="http://www.w3.org/2000/svg" fill="white">
+		<rect width="2" height="2" x="1" y="1" />
+		<rect width="2" height="2" x="1" y="4" />
+		<rect width="2" height="2" x="1" y="7" />
+		<rect width="2" height="2" x="1" y="10" />
+		<rect width="2" height="2" x="1" y="13" />
+		
+		<rect width="5" height="2" x="4" y="1" />
+		<rect width="5" height="2" x="4" y="4" />
+		<rect width="5" height="2" x="4" y="7" />
+		<rect width="5" height="2" x="4" y="10" />
+		<rect width="5" height="2" x="4" y="13" />
+		
+		<rect width="5" height="2" x="10" y="1" />
+		<rect width="5" height="2" x="10" y="4" />
+		<rect width="5" height="2" x="10" y="7" />
+		<rect width="5" height="2" x="10" y="10" />
+		<rect width="5" height="2" x="10" y="13" />
+	</g>
+</svg>
 
 -- ################################################################################################
 
@@ -4591,6 +4661,7 @@ var config = new (function LocalConfig() {
 	this.enableSnippets = true;
 	this.enableLiveAutocompletion = true;
 	this.safeRows = 100;
+	this.iconColor = '';
 	
 	for (var k in this) {
 		(function (k, defaultValue) {
