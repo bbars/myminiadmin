@@ -5137,9 +5137,11 @@ Content-Type: text/html; charset="utf-8"
 						v = result.rows[y][x];
 						if (v === null)
 							v = 'null';
-						else if (quoteValue)
-							v = '"' + ('' + v).replace(/"/g, '""') + '"';
-						
+						else if (quoteValue) {
+							v = ('' + v).replace(/[\\"]/g, '$&$&');
+							v = v.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+							v = '"' + v + '"';
+						}
 						if (!lines[y])
 							lines[y] = [];
 						lines[y][i] = v;
