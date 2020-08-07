@@ -4333,6 +4333,7 @@ function createTableFromResult(result) {
 					a.className = 'value-link';
 					a.href = value;
 					a.target = '_blank';
+					a.rel = 'noreferrer';
 					td.insertBefore(a, td.firstChild);
 				}
 				tr.appendChild(td);
