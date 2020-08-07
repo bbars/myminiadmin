@@ -3199,7 +3199,7 @@ table.result > thead > tr > * {
 }
 table.result tr > * {
 	border: #ddd 1px solid;
-	line-height: 1.2em;
+	line-height: 1.3em;
 	padding: 0.2em 0.4em;
 	text-align: left;
 	vertical-align: baseline;
