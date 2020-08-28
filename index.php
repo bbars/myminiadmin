@@ -3220,6 +3220,7 @@ table.result tbody tr > * {
 table.result tbody tr > td > pre {
 	margin: 0;
 	padding: 0;
+	font-family: inherit;
 	white-space: pre-wrap;
 	word-wrap: inherit;
 	max-width: 40em;
