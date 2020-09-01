@@ -4362,6 +4362,45 @@ function createTableFromResult(result) {
 	return table;
 }
 
+function remapColumn(table, columnIndex, columnName, mapper) {
+	if (typeof table === 'number') {
+		table = elResultset.querySelectorAll('table.result')[table];
+	}
+	var headTr = table.querySelector(':scope > thead > tr');
+	var ths = Array.from(headTr.children);
+	var trs = Array.from(table.querySelectorAll(':scope > tbody > tr'));
+	if (columnIndex < 0 || columnIndex === null) {
+		columnIndex = ths.length;
+	}
+	if (!columnName) {
+		columnName = mapper;
+	}
+	var th = ths[columnIndex];
+	if (!th) {
+		th = document.createElement('th');
+		headTr.appendChild(th);
+	}
+	if (columnName) {
+		th.textContent = columnName;
+	}
+	table.__result.rows.forEach(function (row, i) {
+		var content = mapper(row, i, table.__result);
+		var tr = trs[i];
+		var td = tr.children[columnIndex];
+		if (!td) {
+			td = document.createElement('td');
+			tr.appendChild(td);
+		}
+		if (content instanceof Node) {
+			td.textContent = '';
+			td.appendChild(content);
+		}
+		else {
+			td.textContent = content;
+		}
+	});
+}
+
 // https://stackoverflow.com/a/6969486
 function escapeRegExp(str) {
 	return str.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&");
