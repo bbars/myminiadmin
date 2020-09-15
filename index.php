@@ -2159,15 +2159,16 @@ function Tinychart(container) {
 	var _yCount = 0;
 	var _forceType = '';
 	var _safeFrame = 2;
+	var _bbox = null;
 	
 	this.scaleX = function (scaleX, originX) {
 		if (!isNaN(scaleX)) {
 			_scaleX = scaleX;
-			this.svg.gChart.style.transform = 'scale(' + _scaleX + ', -1)';
+			this.svg.gChart.style.transform = 'scale(' + _scaleX + ', -1) translateY(-' + _bbox.height + 'px)';
 			
 			if (!isNaN(originX)) {
 				_originX = Math.max(0, Math.min(originX, 1));
-				this.svg.gChart.style.transformOrigin = (_originX * 100) + 'px 50px 0px';
+				this.svg.gChart.style.transformOrigin = (_originX * 100) + 'px 0px 0px';
 			}
 		}
 		return _scaleX;
@@ -2190,6 +2191,7 @@ function Tinychart(container) {
 		_yMax = -Infinity;
 		_yCount = 0;
 		_xCount = this.data.length;
+		_bbox = null;
 		
 		for (var i = 0; i < this.data.length; i++) {
 			var val = this.data[i];
@@ -2236,7 +2238,7 @@ function Tinychart(container) {
 				gChart.appendChild(gItem);
 				return gItem;
 			});
-			var colWidth = Math.max(10, 100 / _xCount);
+			var colWidth = 100 / _xCount;
 			
 			for (var i = 0; i < this.data.length; i++) {
 				var val = this.data[i];
@@ -2329,13 +2331,12 @@ function Tinychart(container) {
 		pXAxis.setAttribute('d', 'M 0 ' + Math.max(0, Math.min(xAxisPy || 0, 100)) + ' h 100');
 		
 		this.svg.appendChild(gChart);
-		var bbox = gChart.getBBox();
-		bbox = gChart.getBBox();
+		_bbox = gChart.getBBox();
 		this.svg.setAttributeNS(null, 'viewBox', [
-			bbox.x - _safeFrame,
-			bbox.y - _safeFrame,
-			(bbox.width + 2*_safeFrame) || 1,
-			(bbox.height + 2*_safeFrame) || 1,
+			_bbox.x - _safeFrame,
+			_bbox.y - _safeFrame,
+			(_bbox.width + 2*_safeFrame) || 1,
+			(_bbox.height + 2*_safeFrame) || 1,
 		].join(' '));
 		this.scaleX(1, 0.5);
 		setTimeout(function () {
@@ -2359,8 +2360,21 @@ function Tinychart(container) {
 				_hovered[i].classList.remove('hover');
 		}
 		_hovered = null;
-		if (rx === undefined || rx === null || rx === false)
-			return;
+		if (rx === undefined || rx === null || rx === false) {
+			this.svg.dispatchEvent(new CustomEvent('hovervalue', {
+				detail: {
+					x: null,
+					y: null,
+					index: -1,
+					dots: null,
+					rects: null,
+					hovered: null,
+				},
+				bubbles: true,
+				cancelable: false,
+			}));
+			return null;
+		}
 		rx = Math.max(0, Math.min(+rx, 1));
 		var xIndex = -1;
 		if (_type == 'col') {
@@ -2455,8 +2469,9 @@ function Tinychart(container) {
 		_this.hoverValue(_this.getRealX(event.offsetX / _this.svg.clientWidth));
 	}
 	function svgMouseleaveListener(event) {
-		if (event.target == _this.svg)
-		_this.hoverValue(-1);
+		if (event.target == _this.svg) {
+			_this.hoverValue(false);
+		}
 	}
 	function svgMousewheelListener(event) {
 		if (event.shiftKey) {
@@ -4894,17 +4909,15 @@ Content-Type: text/html; charset="utf-8"
 		overflow: hidden;
 	}
 	#elChartInfo h4 {
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
-	#elChartInfo > div {
+	#elChartInfo > * {
 		position: relative;
+		white-space: nowrap;
 		line-height: 1.4em;
 		height: 1.4em;
 		transition: top 0.1s ease;
 	}
-	#elChartInfo > div:before {
+	#elChartInfo > *:before {
 		content: attr(data-label);
 		white-space: nowrap;
 		position: absolute;
@@ -5006,9 +5019,13 @@ Content-Type: text/html; charset="utf-8"
 					elChartInfo.__h4 = document.createElement('h4');
 					elChartInfo.insertBefore(elChartInfo.__h4, elChartInfo.children[0]);
 				}
+				if (!hoveredItem || hoveredItem.index < 0) {
+					return;
+				}
 				elChartInfo.__h4.textContent = hoveredItem.x instanceof Date && hoveredItem.x.toISOString
 					? hoveredItem.x.toISOString().replace(/^(.+)T(.+)(?:\.\d*)Z$/, '$1 $2')
 					: hoveredItem.x;
+				elChartInfo.__h4.dataset.label = elChartXCol.options[elChartXCol.selectedIndex].textContent;
 				while (elChartInfo.children.length > hoveredItem.y.length + 1) {
 					elChartInfo.removeChild(elChartInfo.children[1]);
 				}
@@ -5046,7 +5063,11 @@ Content-Type: text/html; charset="utf-8"
 			function onChartContainerEvent(event) {
 				if (event.type == 'hovervalue') {
 					var val = event.detail;
-					if (prevHoveredItemIndex < 0) {
+					if (val.index < 0) {
+						prevHoveredItemIndex = -1;
+						redrawChartInfo(val);
+					}
+					else if (prevHoveredItemIndex < 0) {
 						prevHoveredItemIndex = val.index;
 						redrawChartInfo(val);
 					}
