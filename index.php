@@ -142,6 +142,7 @@ class Api {
 	const PROJECT_GIT_RAW_URL = 'https://raw.githubusercontent.com/bbars/myminiadmin/master/index.php';
 	
 	const CHARSETNR_UTF8 = 33;
+	const CHARSETNR_UTF8MB4 = 45;
 	protected static $encodeUtf8Types = array(
 		MYSQLI_TYPE_TINY_BLOB => 1,
 		MYSQLI_TYPE_MEDIUM_BLOB => 1,
@@ -222,7 +223,7 @@ class Api {
 		}
 		$timeZone = self::getClientTimeZone();
 		header("X-Mysql-Timezone: $timeZone");
-		$mysqli->multi_query("SET NAMES 'utf8', time_zone = '$timeZone'");
+		$mysqli->multi_query("SET NAMES 'utf8mb4', time_zone = '$timeZone'");
 		return $mysqli;
 	}
 	
@@ -304,7 +305,7 @@ class Api {
 				$result['fields'] = $mysqliResult->fetch_fields();
 				$binaryCols = [];
 				foreach ($result['fields'] as $i => $field) {
-					if ($field->charsetnr != self::CHARSETNR_UTF8 && isset(self::$encodeUtf8Types[$field->type]))
+					if ($field->charsetnr != self::CHARSETNR_UTF8 && $field->charsetnr != self::CHARSETNR_UTF8MB4 && isset(self::$encodeUtf8Types[$field->type]))
 						$binaryCols[] = $i;
 					$field->type = self::mysqliType($field->type);
 				}
@@ -4771,20 +4772,25 @@ Content-Type: text/html; charset="utf-8"
 			}
 			var chunkSize = Math.ceil(8 / Math.log2(base));
 			var fill = new Array(chunkSize).fill('0').join('');
-			var decoded = [];
+			var recoded = [];
 			
 			if (intValuesRe.test(type)) {
 				return; // TODO: convert int64
 			}
 			else if (typeof value === 'string') {
-				for (var i = 0; i < value.length; i++) {
-					decoded.push((fill + value.charCodeAt(i).toString(base)).slice(-chunkSize));
-				}
+				recoded = new Blob([value]).arrayBuffer().then(function (ab) {
+					return Array.from(new Uint8Array(ab)).map(function (charCode) {
+						return (fill + charCode.toString(base)).slice(-chunkSize);
+					});
+				});
 			}
 			else {
 				return;
 			}
-			elBlobValueView.innerHTML = '<span>' + decoded.join('</span><span>') + '</span>';
+			elBlobValueView.innerHTML = '';
+			return Promise.resolve(recoded).then(function (recoded) {
+				elBlobValueView.innerHTML = '<span>' + recoded.join('</span><span>') + '</span>';
+			});
 		}
 		
 		function showValue(value, type, name) {
