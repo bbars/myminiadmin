@@ -223,7 +223,7 @@ class Api {
 		}
 		$timeZone = self::getClientTimeZone();
 		header("X-Mysql-Timezone: $timeZone");
-		$mysqli->multi_query("SET NAMES 'utf8mb4', time_zone = '$timeZone'");
+		$mysqli->multi_query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_general_ci', time_zone = '$timeZone'");
 		return $mysqli;
 	}
 	
@@ -4345,10 +4345,10 @@ function createTableFromResult(result) {
 				else {
 					td.textContent = value;
 				}
-				if (urlValueRe.test(value)) {
+				if (urlValueRe.test(td.__value)) {
 					var a = document.createElement('a');
 					a.className = 'value-link';
-					a.href = value;
+					a.href = td.__value;
 					a.target = '_blank';
 					a.rel = 'noreferrer';
 					td.insertBefore(a, td.firstChild);
