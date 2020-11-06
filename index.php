@@ -5139,6 +5139,7 @@ Content-Type: text/html; charset="utf-8"
 	<h2>Export</h2>
 	<div class="m-t">Columns: <span id="elExportCols"></span></div>
 	<textarea class="m-t" id="elExportResult" readonly></textarea>
+	<div class="m-t"><button id="elExportSave">Save SQL</button></div>
 	<style>
 	#elModalExport > h2 {
 		margin-top: 0;
@@ -5153,9 +5154,11 @@ Content-Type: text/html; charset="utf-8"
 	</style>
 	<script>
 	
-	(function (context, elModalExport, elExportCols, elExportResult) {
+	(function (context, elModalExport, elExportCols, elExportResult, elExportSave) {
 		var unquotedTypes = ['DECIMAL', 'NEWDECIMAL', 'BIT', 'TINY', 'SHORT', 'LONG', 'FLOAT', 'DOUBLE', 'LONGLONG', 'INT24', 'CHAR'];
 		context.showExport = function (result) {
+			elModalExport.__result = result;
+			
 			while (elExportCols.children.length)
 				elExportCols.removeChild(elExportCols.children[0]);
 			elExportResult.value = '';
@@ -5174,71 +5177,25 @@ Content-Type: text/html; charset="utf-8"
 				elExportCols.appendChild(document.createTextNode('\n'));
 			}
 			
-			function redraw() {
-				elExportResult.value = '';
-				var checkedColsNames = [];
-				var checkedCols = Array.prototype.slice.call(elExportCols.querySelectorAll('input:checked'), 0);
-				var quotedCols = {};
-				var tables = [];
-				checkedCols = checkedCols.map(function (v, i) {
-					var col = +v.value
-					var colName = '' + v.title;
-					quotedCols[col] = unquotedTypes.indexOf(result.fields[col].type) < 0;
-					colName = '`' + backtickEscape(colName) + '`';
-					checkedColsNames.push(colName);
-					var table = result.fields[col].orgtable;
-					if (tables.indexOf(table) < 0)
-						tables.push(table);
-					return col;
-				});
-				var table = tables.length != 1 ? '??' : '`' + backtickEscape(tables[0]) + '`';
-				
-				if (!checkedCols.length)
-					return;
-				
-				var lines = [];
-				var i, x, y, v, quoteValue;
-				for (i = 0; i < checkedCols.length; i++) {
-					x = checkedCols[i];
-					quoteValue = quotedCols[x];
-					for (y = 0; y < result.rows.length; y++) {
-						v = result.rows[y][x];
-						if (v === null)
-							v = 'null';
-						else if (quoteValue) {
-							v = ('' + v).replace(/[\\"]/g, '$&$&');
-							v = v.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
-							v = '"' + v + '"';
-						}
-						if (!lines[y])
-							lines[y] = [];
-						lines[y][i] = v;
-					}
-				}
-				
-				lines = lines.map(function (line) {
-					return '(' + line.join(', ') + ')';
-				});
-				
-				elExportResult.value =
-					'INSERT INTO ' + table + '\n'
-					+ '(' + checkedColsNames.join(', ') + ')\n'
-					+ 'VALUES\n'
-					+ lines.join(',\n') + ';'
-				;
-			}
-			
-			function onModalEvent(event) {
-				if (event.type == 'change') {
-					redraw();
-				}
-			}
-			
-			elModalExport.addEventListener('change', onModalEvent);
-			
 			Modal.show(elModalExport);
 			redraw();
 		};
+		
+		elModalExport.addEventListener('change', function (event) {
+			redraw();
+		});
+		
+		elExportSave.addEventListener('click', function (event) {
+			var blob = new Blob([elExportResult.value], {
+				type: 'application/sql',
+			});
+			var table = elExportResult.__tables.length != 1 ? null : elExportResult.__tables[0];
+			var a = document.createElement('a');
+			a.href = URL.createObjectURL(blob);
+			a.download = (table || 'export') + '.sql';
+			a.click();
+			URL.revokeObjectURL(a.href);
+		});
 		
 		elResultset.addEventListener('click', function (event) {
 			if (!event.target.classList.contains('btn-export'))
@@ -5247,7 +5204,63 @@ Content-Type: text/html; charset="utf-8"
 			context.showExport(result);
 		});
 		
-	})(this, elModalExport, elExportCols, elExportResult);
+		function redraw() {
+			elExportResult.value = '';
+			var result = elModalExport.__result;
+			var checkedColsNames = [];
+			var checkedCols = Array.prototype.slice.call(elExportCols.querySelectorAll('input:checked'), 0);
+			var quotedCols = {};
+			var tables = [];
+			checkedCols = checkedCols.map(function (v, i) {
+				var col = +v.value
+				var colName = '' + v.title;
+				quotedCols[col] = unquotedTypes.indexOf(result.fields[col].type) < 0;
+				colName = '`' + backtickEscape(colName) + '`';
+				checkedColsNames.push(colName);
+				var table = result.fields[col].orgtable;
+				if (tables.indexOf(table) < 0)
+					tables.push(table);
+				return col;
+			});
+			var table = tables.length != 1 ? '??' : '`' + backtickEscape(tables[0]) + '`';
+			elExportResult.__tables = tables;
+			
+			if (!checkedCols.length)
+				return;
+			
+			var lines = [];
+			var i, x, y, v, quoteValue;
+			for (i = 0; i < checkedCols.length; i++) {
+				x = checkedCols[i];
+				quoteValue = quotedCols[x];
+				for (y = 0; y < result.rows.length; y++) {
+					v = result.rows[y][x];
+					if (v === null)
+						v = 'null';
+					else if (quoteValue) {
+						v = ('' + v).replace(/[\\"]/g, '$&$&');
+						v = v.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+						v = '"' + v + '"';
+					}
+					if (!lines[y])
+						lines[y] = [];
+					lines[y][i] = v;
+				}
+			}
+			
+			lines = lines.map(function (line) {
+				return '(' + line.join(', ') + ')';
+			});
+			
+			elExportResult.value =
+				'INSERT INTO ' + table + '\n'
+				+ '(' + checkedColsNames.join(', ') + ')\n'
+				+ 'VALUES\n'
+				+ lines.join(',\n') + ';'
+			;
+		}
+		
+	})(this, elModalExport, elExportCols, elExportResult, elExportSave);
 	
 	</script>
 </div>
