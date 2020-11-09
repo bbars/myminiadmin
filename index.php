@@ -1178,7 +1178,7 @@ var SERVER = <?= json_encode(array(
 </div>
 <div id="elModalSqlValues" class="modal modal-full">
 	<span class="modal-close"></span>
-	<h2>SQL values</h2>
+	<h2>SQL values (JSON)</h2>
 	<form id="elSqlValuesForm">
 		<div id="elSqlValuesSet">
 			<div>
@@ -1216,7 +1216,7 @@ var SERVER = <?= json_encode(array(
 					elSqlValue.querySelector('label').textContent = k;
 					var input = elSqlValue.querySelector('input');
 					input.name = k;
-					input.value = typeof savedValues[k] != 'undefined' ? JSON.stringify(savedValues[k]) : '';
+					input.value = typeof savedValues[k] != 'undefined' ? savedValues[k] : '';
 					elSqlValuesSet.appendChild(elSqlValue);
 				}
 				
@@ -1228,16 +1228,29 @@ var SERVER = <?= json_encode(array(
 						for (var i = 0; i < inputs.length; i++) {
 							var input = inputs[i];
 							var value = input.value;
-							try {
-								value = value === '' ? null : JSON.parse(value);
+							savedValues[input.name] = value;
+							if (value === '') {
+								value = null;
+								savedValues[input.name] = 'null';
 							}
-							catch (e) {
-								// keep value as a string
+							else {
+								try {
+									value = JSON.parse(value);
+								}
+								catch (err) {
+									if (confirm("Invalid JSON value for '" + input.name + "' (" + err.message + ").\n\nDo you want to send raw string?")) {
+										savedValues[input.name] = JSON.stringify(value);
+										// keep value as a string
+									}
+									else {
+										return;
+									}
+								}
 							}
 							if (typeof value == 'number' && value.toString() !== input.value) {
 								value = input.value;
 							}
-							values[input.name] = savedValues[input.name] = value;
+							values[input.name] = value;
 						}
 						resolve(values);
 						Modal.hide(elModalSqlValues);
