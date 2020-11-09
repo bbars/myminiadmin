@@ -422,16 +422,20 @@ class Api {
 			return null;
 		}
 		if (self::getAppGitUrl()) {
-			exec('git pull', $out, $exitCode);
+			exec('git pull 2>&1 1>/dev/null', $out, $exitCode);
+			if ($exitCode) {
+				throw new MyError('UPDATE_ERROR', reset($out));
+			}
 			return $exitCode != 0 ? false : self::getAppVersionCode();
 		}
 		else if (self::PROJECT_GIT_RAW_URL) {
-			$pathUpd = tempnam('/tmp', 'mymupd');
+			$pathUpd = tempnam(sys_get_temp_dir(), 'mymupd');
 			$success = copy(self::PROJECT_GIT_RAW_URL, $pathUpd);
 			if (!$success) {
+				throw new Exception("Unable to copy file " . self::PROJECT_GIT_RAW_URL, 1);
 				return false;
 			}
-			$pathBak = tempnam('/tmp', 'mymbak');
+			$pathBak = tempnam(sys_get_temp_dir(), 'mymbak');
 			$success = rename(__FILE__, $pathBak);
 			if (!$success) {
 				@unlink($pathUpd);
@@ -693,6 +697,7 @@ class MyError extends Exception {
 		'MYSQL_ERROR',
 		'UNABLE_TO_USE_RESULT',
 		'TOO_MANY_REQUESTS',
+		'UPDATE_ERROR',
 	];
 	protected $code = '';
 	
@@ -752,6 +757,7 @@ function setResponseCode($code, $responseText = '') {
 
 // PROCESS REQUEST:
 
+chdir(__DIR__);
 session_name('mymi_session');
 session_start();
 if (!$_GET) {
@@ -1104,15 +1110,18 @@ var SERVER = <?= json_encode(array(
 				.catch(function (error) {
 					elUpdateAppButton.disabled = false;
 					elUpdateAppButton.classList.remove('loading');
-					elUpdateResult.textContent = error;
+					elUpdateResult.textContent = error.message;
+					return null;
 				})
 				.then(function (newVersionCode) {
 					elUpdateAppButton.disabled = false;
 					elUpdateAppButton.classList.remove('loading');
 					if (newVersionCode === false || newVersionCode === null) {
-						elUpdateResult.textContent = "Unable to update (insufficient privileges?)";
+						if (!elUpdateResult.textContent) {
+							elUpdateResult.textContent = "Unable to update (insufficient privileges?)";
+						}
 					}
-					else if (!newVersionCode && !getAppVersionCode) {
+					else if (!newVersionCode || !SERVER.appVersionCode) {
 						elUpdateResult.textContent = "Done. Refresh page to use new version";
 					}
 					else if (newVersionCode !== SERVER.appVersionCode) {
@@ -1712,12 +1721,13 @@ function saveSqlFile(value) {
 		(d.getTime() / 1000 | 0),
 	].filter(Boolean).join('-') + '.sql';
 	
-	var blob = new Blob([value], { type: 'text/sql' });
+	var blob = new Blob([value], { type: 'application/sql' });
 	var a = document.createElement('a');
 	a.download = name;
 	a.href = URL.createObjectURL(blob);
 	a.click();
-	return false;
+	URL.revokeObjectURL(a.href);
+	return true;
 }
 
 elQuery.addEventListener('dragstart', function (event) {
@@ -3794,7 +3804,7 @@ function apiCall(fn, params) {
 				return createNewConnection();
 			break;
 			default:
-				return error;
+				throw error;
 			break;
 		}
 	});
@@ -4677,6 +4687,7 @@ var locationParams = new (function () {
 
 // Custom Ace completer:
 function SQLNamesCompleter(tag) {
+	var excludePrefix = /^\d+/;
 	Object.defineProperties(this, {
 		tag: {
 			value: tag,
@@ -4688,6 +4699,9 @@ function SQLNamesCompleter(tag) {
 		},
 		getCompletions: {
 			value: function (editor, session, pos, prefix, callback) {
+				if (excludePrefix.test(prefix)) {
+					return [];
+				}
 				callback(null, this.map(function (word) {
 					return {
 						caption: word,
@@ -5199,15 +5213,8 @@ Content-Type: text/html; charset="utf-8"
 		});
 		
 		elExportSave.addEventListener('click', function (event) {
-			var blob = new Blob([elExportResult.value], {
-				type: 'application/sql',
-			});
 			var table = elExportResult.__tables.length != 1 ? null : elExportResult.__tables[0];
-			var a = document.createElement('a');
-			a.href = URL.createObjectURL(blob);
-			a.download = (table || 'export') + '.sql';
-			a.click();
-			URL.revokeObjectURL(a.href);
+			saveSqlFile(elExportResult.value, (table || 'export') + '.sql');
 		});
 		
 		elResultset.addEventListener('click', function (event) {
