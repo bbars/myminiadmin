@@ -1222,6 +1222,7 @@ var SERVER = <?= json_encode(array(
 				
 				function onModalEvent(event) {
 					if (event.type == 'submit') {
+						event.preventDefault();
 						var values = {};
 						var inputs = elSqlValuesSet.querySelectorAll('input');
 						for (var i = 0; i < inputs.length; i++) {
