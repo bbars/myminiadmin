@@ -1204,9 +1204,11 @@ var SERVER = <?= json_encode(array(
 		var elSqlValueTemplate = elSqlValuesSet.children[0];
 		
 		context.promptSqlValues = function (placeholders) {
+			var prevActiveElement = document.activeElement;
 			return new Promise(function (resolve, reject) {
-				while (elSqlValuesSet.children.length)
+				while (elSqlValuesSet.children.length) {
 					elSqlValuesSet.removeChild(elSqlValuesSet.children[0]);
+				}
 				
 				for (var i = 0; i < placeholders.length; i++) {
 					var elSqlValue = elSqlValueTemplate.cloneNode(true);
@@ -1220,33 +1222,31 @@ var SERVER = <?= json_encode(array(
 				
 				function onModalEvent(event) {
 					if (event.type == 'submit') {
-						try {
-							var values = {};
-							var inputs = elSqlValuesSet.querySelectorAll('input');
-							for (var i = 0; i < inputs.length; i++) {
-								var input = inputs[i];
-								var value = input.value;
-								try {
-									value = value === '' ? null : JSON.parse(value);
-								}
-								catch (e) {
-									// keep value as a string
-								}
-								if (typeof value == 'number' && value.toString() !== input.value)
-									value = input.value;
-								values[input.name] = savedValues[input.name] = value;
+						var values = {};
+						var inputs = elSqlValuesSet.querySelectorAll('input');
+						for (var i = 0; i < inputs.length; i++) {
+							var input = inputs[i];
+							var value = input.value;
+							try {
+								value = value === '' ? null : JSON.parse(value);
 							}
-							resolve(values);
-							Modal.hide(elModalSqlValues);
+							catch (e) {
+								// keep value as a string
+							}
+							if (typeof value == 'number' && value.toString() !== input.value) {
+								value = input.value;
+							}
+							values[input.name] = savedValues[input.name] = value;
 						}
-						catch (e) {
-							alert(e);
-							elSqlValuesJson.ace.focus();
-						}
+						resolve(values);
+						Modal.hide(elModalSqlValues);
 					}
 					else if (event.type == 'modal-hide') {
 						elSqlValuesForm.removeEventListener('submit', onModalEvent);
 						elModalSqlValues.removeEventListener('modal-hide', onModalEvent);
+						if (prevActiveElement) {
+							prevActiveElement.focus();
+						}
 					}
 				}
 				elSqlValuesForm.addEventListener('submit', onModalEvent);
