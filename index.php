@@ -4048,38 +4048,41 @@ function refreshTables() {
 
 function parseSql(s) {
 	var res = [];
-	var reAny = /`|'|"/g;
+	var reAny = /`|'|"|--|\/\*/g;
 	var reClosings = {
 		'`': /(`+)/g,
 		'"': /(\\*")/g,
 		"'": /(\\*')/g,
+		'--': /[\r\n]/g,
+		'/*': /\*\//g,
 	};
-	var reCommented = /--+[^\r\n]*$/;
 	var m;
 	var offset = false;
 	var cap = false;
 	var cap2;
 	while (s) {
 		m = reAny.exec(s);
-		if (!m)
+		if (!m) {
+			res.push(s);
 			break;
+		}
 		
 		cap = m[0];
 		offset = m.index;
 		sub = s.substr(0, offset);
 		
-		if (reCommented.test(sub)) {
-			var nextLine = s.substr(offset).search(/[\r\n]/);
-			reAny.lastIndex = nextLine >= 0 ? offset + nextLine : s.length;
-			continue;
-		}
 		res.push(sub);
 		s = s.substr(offset);
+		
 		reAny.lastIndex = 0;
 		offset = false;
 		reClosings[cap].lastIndex = cap.length;
 		while (m = reClosings[cap].exec(s)) {
-			if (m[1].length % 2 == 1) {
+			if (!m[1]) {
+				offset = m.index + m[0].length;
+				break;
+			}
+			else if (m[1].length % 2 === 1) {
 				cap2 = m[1];
 				offset = m.index + cap2.length;
 				break;
@@ -4088,11 +4091,10 @@ function parseSql(s) {
 		if (offset === false) {
 			throw new Error("Unable to find matching enclosing character opened at position " + res.join('').length);
 		}
+		
 		res.push(s.substr(0, offset));
 		s = s.substr(offset);
 	}
-	if (s)
-		res.push(s);
 	
 	var parsed = res;
 	var counter = 0;
@@ -4101,8 +4103,6 @@ function parseSql(s) {
 		var re = /(\?)|:([a-zA-Z\d_]+)/g;
 		var s = parsed[i];
 		while (m = re.exec(s)) {
-			// if (reCommented.test(s.slice(0, m.index).split(/[\r\n]/).pop()))
-			// 	continue;
 			placeholders[m[1] ? counter++ : m[2]] = true;
 		}
 	}
@@ -4129,12 +4129,9 @@ function buildSqlStatement(statement, values) {
 	var sql = statement.parsed;
 	var counter = 0;
 	var re = /(\?)|:([a-zA-Z\d_]+)/g;
-	var reCommented = /--+[^\r\n]*$/;
 	for (var i = 0; i < sql.length; i += 2) {
 		re.lastIndex = 0;
 		sql[i] = sql[i].replace(re, function (m0, m1, m2, pos) {
-			// if (reCommented.test(sql[i].slice(0, pos).split(/[\r\n]/).pop()))
-			// 	return m0;
 			var key = m1 ? counter++ : m2;
 			return typeof values[key] != 'undefined' ? escapeSqlString(values[key]) : m0;
 		});
