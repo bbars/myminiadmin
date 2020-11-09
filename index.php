@@ -5168,6 +5168,20 @@ Content-Type: text/html; charset="utf-8"
 	#elModalExport > h2 {
 		margin-top: 0;
 	}
+	#elExportCols {
+		display: flex;
+		flex-direction: column;
+		flex-wrap: wrap;
+		max-height: 10em;
+		overflow: auto;
+		align-items: flex-start;
+		align-content: flex-start;
+	}
+	#elExportCols > * {
+		max-width: 30%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
 	#elExportResult {
 		display: block;
 		width: 100%;
@@ -5183,8 +5197,9 @@ Content-Type: text/html; charset="utf-8"
 		context.showExport = function (result) {
 			elModalExport.__result = result;
 			
-			while (elExportCols.children.length)
+			while (elExportCols.children.length) {
 				elExportCols.removeChild(elExportCols.children[0]);
+			}
 			elExportResult.value = '';
 			
 			for (var i = 0; i < result.fields.length; i++) {
