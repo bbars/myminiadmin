@@ -1205,67 +1205,52 @@ var SERVER = <?= json_encode(array(
 		
 		context.promptSqlValues = function (placeholders) {
 			var prevActiveElement = document.activeElement;
-			return new Promise(function (resolve, reject) {
-				while (elSqlValuesSet.children.length) {
-					elSqlValuesSet.removeChild(elSqlValuesSet.children[0]);
-				}
-				
-				for (var i = 0; i < placeholders.length; i++) {
-					var elSqlValue = elSqlValueTemplate.cloneNode(true);
-					var k = placeholders[i];
-					elSqlValue.querySelector('label').textContent = k;
-					var input = elSqlValue.querySelector('input');
-					input.name = k;
-					input.value = typeof savedValues[k] != 'undefined' ? savedValues[k] : '';
-					elSqlValuesSet.appendChild(elSqlValue);
-				}
-				
-				function onModalEvent(event) {
-					if (event.type == 'submit') {
-						event.preventDefault();
-						var values = {};
-						var inputs = elSqlValuesSet.querySelectorAll('input');
-						for (var i = 0; i < inputs.length; i++) {
-							var input = inputs[i];
-							var value = input.value;
-							savedValues[input.name] = value;
-							if (value === '') {
-								value = null;
-								savedValues[input.name] = 'null';
+			
+			while (elSqlValuesSet.children.length) {
+				elSqlValuesSet.removeChild(elSqlValuesSet.children[0]);
+			}
+			for (var i = 0; i < placeholders.length; i++) {
+				var elSqlValue = elSqlValueTemplate.cloneNode(true);
+				var k = placeholders[i];
+				elSqlValue.querySelector('label').textContent = k;
+				var input = elSqlValue.querySelector('input');
+				input.name = k;
+				input.value = typeof savedValues[k] != 'undefined' ? savedValues[k] : '';
+				elSqlValuesSet.appendChild(elSqlValue);
+			}
+			
+			return Modal.prompt(elModalSqlValues).then(function (valuesFd) {
+				var entry, valuesIt = valuesFd.entries();
+				var values = {};
+				var name, value;
+				while ((entry = valuesIt.next()) && !entry.done) {
+					name = entry.value[0];
+					value = entry.value[1];
+					savedValues[name] = value;
+					if (value === '') {
+						value = null;
+						savedValues[name] = 'null';
+					}
+					else {
+						try {
+							value = JSON.parse(value);
+						}
+						catch (err) {
+							if (confirm("Invalid JSON value for '" + name + "' (" + err.message + ").\n\nDo you want to send raw string?")) {
+								savedValues[name] = JSON.stringify(value);
+								// keep value as a string
 							}
 							else {
-								try {
-									value = JSON.parse(value);
-								}
-								catch (err) {
-									if (confirm("Invalid JSON value for '" + input.name + "' (" + err.message + ").\n\nDo you want to send raw string?")) {
-										savedValues[input.name] = JSON.stringify(value);
-										// keep value as a string
-									}
-									else {
-										return;
-									}
-								}
+								return;
 							}
-							if (typeof value == 'number' && value.toString() !== input.value) {
-								value = input.value;
-							}
-							values[input.name] = value;
-						}
-						resolve(values);
-						Modal.hide(elModalSqlValues);
-					}
-					else if (event.type == 'modal-hide') {
-						elSqlValuesForm.removeEventListener('submit', onModalEvent);
-						elModalSqlValues.removeEventListener('modal-hide', onModalEvent);
-						if (prevActiveElement) {
-							prevActiveElement.focus();
 						}
 					}
+					if (typeof value === 'number' && value.toString() !== entry.value[1]) {
+						value = entry.value[1];
+					}
+					values[name] = value;
 				}
-				elSqlValuesForm.addEventListener('submit', onModalEvent);
-				elModalSqlValues.addEventListener('modal-hide', onModalEvent);
-				Modal.show(elModalSqlValues);
+				return values;
 			});
 		};
 	})(this, elModalSqlValues, elSqlValuesForm, elSqlValuesSet);
@@ -1497,8 +1482,8 @@ function AceEditorFacade(containerElement) {
 	this.ace.completers.push(this._completers.base);
 	this.ace.completers.push(this._completers.table);
 	this.ace.completers.push(this._completers.column);
-	this.ace.commands.bindKey({win: "F8", mac: "Command-D"}, "removeline");
-	this.ace.commands.bindKey({win: "Ctrl-Shift-D", mac: "Command-Shift-D"}, "copylinesdown");
+	this.ace.commands.bindKey({ win: "Ctrl-Shift-[", mac: "Command-Shift-[" }, "fold");
+	this.ace.commands.bindKey({ win: "Ctrl-Shift-]", mac: "Command-Shift-]" }, "unfold");
 }
 
 elResultset.EM_1 = (function () {
@@ -1982,8 +1967,9 @@ Content-Type: application/javascript; charset="utf-8"
 	
 	var Modal = window.Modal = {
 		show: function (content) {
-			if (!modalStack.parentElement)
+			if (!modalStack.parentElement) {
 				document.body.appendChild(modalStack);
+			}
 			if (!(content instanceof HTMLElement)) {
 				var container = document.createElement('div');
 				container.textContent = content;
@@ -2016,6 +2002,57 @@ Content-Type: application/javascript; charset="utf-8"
 			}
 			document.body.classList.toggle('modal-stack-show', modalStack.children.length > 0);
 			return hideContent;
+		},
+		prompt: function (content) {
+			var form = content.matches('form') ? content : content.querySelector('form');
+			var _this = this;
+			return new Promise(function (resolve, reject) {
+				try {
+					if (!form) {
+						throw new Error("Unable to prompt: there are no form elements within modal node");
+					}
+					
+					function onModalHide() {
+						content.removeEventListener('modal-hide', onModalHide);
+						form.removeEventListener('submit', onFormSubmit);
+						resolve && resolve(null);
+						resolve = reject = null;
+					}
+					
+					function onFormSubmit(event) {
+						var modals = [];
+						for (var i = modalStack.children.length - 1; i >= 0; i--) {
+							modals.push(modalStack.children[i]);
+							if (modalStack.children[i] === content) {
+								break;
+							}
+						}
+						event.preventDefault();
+						var result = new FormData(form);
+						resolve && resolve(result);
+						resolve = reject = null;
+						if (modals[modals.length - 1] !== content) {
+							throw new Error("Unable to find current modal in modal stack");
+						}
+						modals.forEach(function () {
+							_this.hide();
+						});
+					}
+					
+					content.addEventListener('modal-hide', onModalHide);
+					form.addEventListener('submit', onFormSubmit);
+					_this.show(content);
+				}
+				catch (err) {
+					if (reject) {
+						reject(err);
+					}
+					else {
+						resolve = reject = null;
+						console.error(err);
+					}
+				}
+			});
 		},
 		get: function () {
 			return modalStack.children.length ? modalStack.children[modalStack.children.length - 1] : null;
