@@ -1807,19 +1807,21 @@ document.addEventListener('drop', function (event) {
 		if (touch.clientX < elAside.clientWidth + elAside.offsetLeft) {
 			return;
 		}
+		event.preventDefault();
 		capture = {
 			touch: touch,
+			time: Date.now(),
 			left: elAside.offsetLeft / window.innerWidth,
 			showing: elAside.classList.contains('showing'),
-			moved: false,
+			moved: 0,
 		};
 		elAside.style.transition = '';
-	}, { passive: true });
+	}, { passive: false });
 	elAside.addEventListener('touchmove', function (event) {
 		if (!capture) {
 			return;
 		}
-		capture.moved = true;
+		capture.moved++;
 		var touch = event.touches[0];
 		var x = (capture.touch.screenX - touch.screenX) / window.innerWidth;
 		if (Math.abs(x) > 0) {
@@ -1832,7 +1834,7 @@ document.addEventListener('drop', function (event) {
 		if (!capture) {
 			return;
 		}
-		if (!capture.moved) {
+		if (!capture.moved || Date.now() - capture.time < 300) {
 			toggleAside(!capture.showing);
 		}
 		else {
@@ -1841,7 +1843,7 @@ document.addEventListener('drop', function (event) {
 			toggleAside(Math.abs(x) > 0.3 ? x < 0 : capture.showing);
 		}
 		capture = null;
-	});
+	}, { passive: true });
 	elAside.addEventListener('click', function (event) {
 		if (event.clientX < elAside.clientWidth + elAside.offsetLeft) {
 			return;
