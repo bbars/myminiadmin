@@ -3308,6 +3308,8 @@ table.result tbody tr > * {
 	word-wrap: inherit;
 }
 table.result tbody tr > td > pre {
+	display: inline-block;
+	vertical-align: top;
 	margin: 0;
 	padding: 0;
 	font-family: inherit;
