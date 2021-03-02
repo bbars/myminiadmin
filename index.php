@@ -3013,7 +3013,6 @@ button {
 button.btn-flat,
 .btn.btn-flat {
 	border: none;
-	background: #eee;
 	text-shadow: none;
 	padding: 0.5em;
 	min-width: initial;
@@ -3216,28 +3215,28 @@ textarea:focus {
 	flex-wrap: nowrap;
 	flex-direction: row;
 	align-items: baseline;
-	margin: 1.2em 0.75em 0;
+	margin: 1.2em 0.7em 0;
 	position: sticky;
 	top: 0.75em;
+	right: 0.7em;
 	user-select: none;
+	border-radius: 2px;
+	box-shadow: #c3b799 0 0 0 1px;
 }
 .result-ctl > * {
 	border-radius: 0;
 }
 .result-ctl > :first-child {
-	border-top-left-radius: 2px;
-	border-bottom-left-radius: 2px;
+	border-top-left-radius: inherit;
+	border-bottom-left-radius: inherit;
 }
 .result-ctl > :last-child  {
-	border-top-right-radius: 2px;
-	border-bottom-right-radius: 2px;
-}
-.result-ctl > * + * {
-	margin-top: 1px;
+	border-top-right-radius: inherit;
+	border-bottom-right-radius: inherit;
 }
 
 .tab.pinned .btn-pin {
-	box-shadow: #09f7 0 0 1.5em 0 inset;
+	box-shadow: #b1a482 0 0 1.5em 0 inset;
 }
 
 .m-t { margin-top:    0.5em; }
