@@ -4101,7 +4101,6 @@ function refreshTables() {
 }
 
 function parseSql(s) {
-	var res = [];
 	var reAny = /`|'|"|--|\/\*/g;
 	var reClosings = {
 		'`': /(`+)/g,
@@ -4110,6 +4109,7 @@ function parseSql(s) {
 		'--': /[\r\n]|$/g,
 		'/*': /\*\//g,
 	};
+	var parsed = [];
 	var m;
 	var offset = false;
 	var cap = false;
@@ -4117,7 +4117,7 @@ function parseSql(s) {
 	while (s) {
 		m = reAny.exec(s);
 		if (!m) {
-			res.push(s);
+			parsed.push(s);
 			break;
 		}
 		
@@ -4125,7 +4125,7 @@ function parseSql(s) {
 		offset = m.index;
 		sub = s.substr(0, offset);
 		
-		res.push(sub);
+		parsed.push(sub);
 		s = s.substr(offset);
 		
 		reAny.lastIndex = 0;
@@ -4143,14 +4143,13 @@ function parseSql(s) {
 			}
 		}
 		if (offset === false) {
-			throw new Error("Unable to find matching enclosing character opened at position " + res.join('').length);
+			throw new Error("Unable to find matching enclosing character opened at position " + parsed.join('').length);
 		}
 		
-		res.push(s.substr(0, offset));
+		parsed.push(s.substr(0, offset));
 		s = s.substr(offset);
 	}
 	
-	var parsed = res;
 	var counter = 0;
 	var placeholders = {};
 	for (var i = 0; i < parsed.length; i += 2) {
@@ -4161,8 +4160,30 @@ function parseSql(s) {
 		}
 	}
 	
+	var expressions = [[]];
+	parsed.forEach(function (s, i) {
+		if (i % 2) {
+			expressions[expressions.length - 1].push(s);
+		}
+		else {
+			while (true) {
+				var delimPos = s.indexOf(';');
+				if (delimPos < 0) {
+					expressions[expressions.length - 1].push(s);
+					break;
+				}
+				else {
+					expressions[expressions.length - 1].push(s.slice(0, delimPos + 1));
+					s = s.slice(delimPos + 1);
+					expressions.push([]);
+				}
+			}
+		}
+	});
+	
 	return {
 		parsed: parsed,
+		parsedExpressions: expressions,
 		placeholders: Object.keys(placeholders),
 		sql: parsed.join(''),
 	};
@@ -4214,8 +4235,29 @@ function executeQuery(sql, safeRows) {
 	
 	return new Promise(function (resolve, reject) {
 			var statement = parseSql(sql);
-			if (!statement.placeholders.length)
+			
+			var warnUnsafeOperation = null;
+			for (var i = statement.parsedExpressions.length - 1; i >= 0; i--) {
+				var expr = statement.parsedExpressions[i].map(function (s, i) {
+					return i % 2 ? '?' : s;
+				}).join('').trim();
+				if (!expr) {
+					continue;
+				}
+				if (/^(update|delete)\b/i.test(expr) && !/\bwhere\b/i.test(expr)) {
+					warnUnsafeOperation = true;
+					break;
+				}
+			}
+			if (warnUnsafeOperation) {
+				if (!confirm("Are you sure want to execute unsafe operations? (DELETE/UPDATE without WHERE)")) {
+					return reject(null);
+				}
+			}
+			
+			if (!statement.placeholders.length) {
 				resolve(run(sql));
+			}
 			else {
 				promptSqlValues(statement.placeholders)
 					.then(function (values) {
