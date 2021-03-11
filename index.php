@@ -3270,6 +3270,48 @@ textarea:focus {
 	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
 }
 
+.result-expression {
+	display: block;
+	position: relative;
+	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
+	font-size: 0.8em;
+	white-space: pre-wrap !important;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-height: 1.4em;
+	line-height: 1.4em;
+	margin-bottom: 0.5em;
+	cursor: pointer;
+	color: #666;
+	background: #f6f6f6;
+	border-radius: 4px;
+}
+.tab > .tab-contents > .result-expression {
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+	border-bottom-left-radius: 0;
+	margin-top: -1.25em;
+	margin-left: -1.25em;
+	margin-right: -1.25em;
+	padding-top: 0.4em;
+	padding-right: 0.4em;
+	z-index: 3;
+}
+.result-expression:hover {
+	color: inherit;
+}
+.result-expression:before {
+	content: '';
+	width: 1em;
+	height: 1em;
+	display: inline-block;
+	vertical-align: -0.1em;
+	background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="8" fill="none" /><path stroke="%232a8" stroke-width="2" fill="none" d="M 6 3  L 10 8  L 6 13"/></svg>') center center no-repeat;
+	background-size: 100%;
+	margin-right: 0.5em;
+	cursor: help;
+}
+
 table.result {
 	display: inline-table;
 	border-spacing: 0;
@@ -4215,11 +4257,9 @@ function buildSqlStatement(statement, values) {
 }
 
 function executeQuery(sql, safeRows) {
+	var statement;
 	var selectedConnection = getSelectedConnectionId();
 	var selectedBase = getSelectedBase();
-	var matches = /\b(?:(database)|(table|view))\b/i.exec(sql) || [];
-	var thenRefreshBases = !!matches[1];
-	var thenRefreshTables = !!matches[2];
 	safeRows = safeRows || config.safeRows || 100;
 	
 	function run(sql) {
@@ -4234,9 +4274,13 @@ function executeQuery(sql, safeRows) {
 	}
 	
 	return new Promise(function (resolve, reject) {
-			var statement = parseSql(sql);
+			statement = parseSql(sql);
 			
-			var warnUnsafeOperation = null;
+			statement.analysis = {
+				thenRefreshBases: null,
+				thenRefreshTables: null,
+				warnUnsafeOperation: null,
+			};
 			for (var i = statement.parsedExpressions.length - 1; i >= 0; i--) {
 				var expr = statement.parsedExpressions[i].map(function (s, i) {
 					return i % 2 ? '?' : s;
@@ -4244,12 +4288,17 @@ function executeQuery(sql, safeRows) {
 				if (!expr) {
 					continue;
 				}
-				if (/^(update|delete)\b/i.test(expr) && !/\bwhere\b/i.test(expr)) {
-					warnUnsafeOperation = true;
-					break;
+				if (/^(update|delete)\b(?![\s\S]*where)/i.test(expr)) {
+					statement.analysis.warnUnsafeOperation = true;
+				}
+				if (/\b(database)\b/i.test(expr)) {
+					statement.analysis.thenRefreshBases = true;
+				}
+				if (/\b(table|view)\b/i.test(expr)) {
+					statement.analysis.thenRefreshTables = true;
 				}
 			}
-			if (warnUnsafeOperation) {
+			if (statement.analysis.warnUnsafeOperation) {
 				if (!confirm("Are you sure want to execute unsafe operations? (DELETE/UPDATE without WHERE)")) {
 					return reject(null);
 				}
@@ -4272,6 +4321,9 @@ function executeQuery(sql, safeRows) {
 			showError(error, true);
 		})
 		.then(function (resultset) {
+			for (var i = Math.min(resultset.length, statement.parsedExpressions.length) - 1; i >= 0; i--) {
+				resultset[i].parsedExpression = statement.parsedExpressions[i];
+			}
 			showResultset(resultset, {
 				resultCtlButtons: [
 					{
@@ -4292,10 +4344,12 @@ function executeQuery(sql, safeRows) {
 				],
 			});
 			
-			if (thenRefreshBases)
+			if (statement.analysis.thenRefreshBases) {
 				refreshBases();
-			else if (thenRefreshTables)
+			}
+			else if (statement.analysis.thenRefreshTables) {
 				refreshTables();
+			}
 			
 			if (elErrors.length > 0) {
 				elResultset.scrollTo(0, elErrors[0][1].offsetTop);
@@ -4320,6 +4374,7 @@ function showResultset(resultset, conf) {
 	for (var i = 0; i < resultset.length; i++) {
 		var result = resultset[i];
 		var tab = document.createElement('div');
+		tab.__result = result;
 		tab.classList.add('tab');
 		var tabContents = document.createElement('div');
 		tabContents.classList.add('tab-contents');
@@ -4328,6 +4383,15 @@ function showResultset(resultset, conf) {
 			elErrors.push(showError(result.error, tabContents));
 		}
 		else {
+			if (result.parsedExpression) {
+				var expression = document.createElement('div');
+				expression.classList.add('result-expression', 'click-show-value');
+				expression.dataset.title = "SQL Expression";
+				var sql = result.parsedExpression.join('').replace(/^\s*|\s*;\s*$/g, '');
+				expression.__value = sql;
+				expression.textContent = sql.replace(/^\s*/, '').replace(/^(-- [^\n]*\n\s*)+/g, '');
+				tabContents.appendChild(expression);
+			}
 			var table = createTableFromResult(result);
 			rowCounts.push((result.rows ? result.rows.length : 0) + (result.safeCut ? '+' : ''));
 			if (result.info) {
@@ -4914,6 +4978,9 @@ Content-Type: text/html; charset="utf-8"
 		}
 		
 		function showValue(value, type, name) {
+			elModalBlobValue.__value = value;
+			elModalBlobValue.__type = type;
+			elModalBlobValue.__name = name;
 			var elDefMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="data,256"]');
 			var elJsonMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="json"]');
 			var elPhpMode = elModalBlobValue.querySelector('[name="blob-value-display-mode"][value="php"]');
@@ -4949,13 +5016,23 @@ Content-Type: text/html; charset="utf-8"
 		}
 		
 		function showValueForTd(td) {
-			if (!td || !bigValuesRe.test(td.dataset.type || ''))
+			if (!td || !bigValuesRe.test(td.dataset.type || '')) {
 				return;
-			elModalBlobValue.__td = td;
-			elModalBlobValueTitle.textContent = td.dataset.name + ' (' + td.dataset.type + ')';
-			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
+			}
+			return showValueForElement(td, td.dataset.name + ' (' + td.dataset.type + ')');
+		}
+		
+		function showValueForElement(el, title) {
+			if (!el) {
+				return;
+			}
+			elModalBlobValue.__el = el;
+			elModalBlobValueTitle.textContent = title || 'Value';
+			showValue(el.__value || el.textContent, 'string', el.dataset.name || el.name || null);
 			Modal.show(elModalBlobValue);
 		}
+		
+		window.showValueForElement = showValueForElement;
 		
 		elResultset.addEventListener('click', function (event) {
 			if (!event.ctrlKey)
@@ -4984,7 +5061,7 @@ Content-Type: text/html; charset="utf-8"
 		});
 		
 		elModalBlobValue.addEventListener('change', function (event) {
-			showValue(elModalBlobValue.__td.__value, elModalBlobValue.__td.dataset.type, elModalBlobValue.__td.dataset.name);
+			showValue(elModalBlobValue.__value, elModalBlobValue.__type, elModalBlobValue.__name);
 		});
 		
 		elBlobValueView.addEventListener('keydown', function (event) {
@@ -5000,6 +5077,14 @@ Content-Type: text/html; charset="utf-8"
 				return true;
 			event.preventDefault();
 			return false;
+		});
+		
+		document.body.addEventListener('click', function (event) {
+			var el = event.target.closest('.click-show-value');
+			if (!el) {
+				return;
+			}
+			showValueForElement(el, el.dataset.title || '');
 		});
 	})(elModalBlobValue, elModalBlobValueTitle, elBlobValueView);
 	
