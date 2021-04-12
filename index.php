@@ -3280,6 +3280,7 @@ textarea:focus {
 	text-overflow: ellipsis;
 	max-height: 1.4em;
 	line-height: 1.4em;
+	height: 1.4em;
 	margin-bottom: 0.5em;
 	cursor: pointer;
 	color: #666;
@@ -4231,6 +4232,18 @@ function parseSql(s) {
 	};
 }
 
+function cleanParsedSql(parsed) {
+	var re = /^(?:--|\/\*)/;
+	return parsed.map(function (s, i) {
+		if (i % 2 === 0) {
+			return s;
+		}
+		else {
+			return re.test(s) ? '' : s;
+		}
+	});
+}
+
 function escapeSqlString(s, quote) {
 	if (s === null)
 		return 'NULL';
@@ -4387,9 +4400,8 @@ function showResultset(resultset, conf) {
 				var expression = document.createElement('div');
 				expression.classList.add('result-expression', 'click-show-value');
 				expression.dataset.title = "SQL Expression";
-				var sql = result.parsedExpression.join('').replace(/^\s*|\s*;\s*$/g, '');
-				expression.__value = sql;
-				expression.textContent = sql.replace(/^\s*/, '').replace(/^(-- [^\n]*\n\s*)+/g, '');
+				expression.__value = result.parsedExpression.join('').replace(/^\s*|\s*;\s*$/g, '');
+				expression.textContent = cleanParsedSql(result.parsedExpression).join('').replace(/[\r\n]+/g, ' ').trim();
 				tabContents.appendChild(expression);
 			}
 			var table = createTableFromResult(result);
