@@ -1054,6 +1054,12 @@ var SERVER = <?= json_encode(array(
 				<img id="elConfig_iconColor_preview" src="?part=favicon-16.svg" width="16" height="16" style="vertical-align: middle">
 			</label>
 		</div>
+		<div class="m-b">
+			<label>
+				<input id="elConfig_showWarnings" type="checkbox">
+				Auto show warnings
+			</label>
+		</div>
 		<div>
 			<button type="submit">Save</button>
 		</div>
@@ -1081,6 +1087,7 @@ var SERVER = <?= json_encode(array(
 			elConfig_safeRows.value = config.safeRows;
 			elConfig_iconColor.value = config.iconColor;
 			setIconColor(config.iconColor, elConfig_iconColor_preview);
+			elConfig_showWarnings.checked = config.showWarnings;
 		});
 		elModalPreferences.addEventListener('modal-hide', function (event) {
 			/**/
@@ -1095,6 +1102,7 @@ var SERVER = <?= json_encode(array(
 			config.safeRows = +elConfig_safeRows.value;
 			config.iconColor = elConfig_iconColor.value;
 			setIconColor(config.iconColor);
+			config.showWarnings = elConfig_showWarnings.checked;
 			Modal.hide(elModalPreferences);
 		});
 		elUpdateAppButton.addEventListener('click', function () {
@@ -3185,6 +3193,9 @@ textarea:focus {
 #elResultset > * + * {
 	border-top: #444 2px dashed;
 }
+#elResultset > *.related-prev {
+	border-top: none;
+}
 #elResultset.move-capture {
 	cursor: move;
 	cursor: -webkit-grab;
@@ -3259,6 +3270,10 @@ textarea:focus {
 	content: 'close';
 }
 
+.message.warning {
+	color: #e40;
+}
+
 .message.error .error-code {
 	color: #f99 !important;
 	font-family: 'Monaco','Menlo','Ubuntu Mono','Consolas','source-code-pro',monospace;
@@ -3297,6 +3312,7 @@ textarea:focus {
 	padding-top: 0.4em;
 	padding-right: 0.4em;
 	z-index: 3;
+	white-space: pre-line !important;
 }
 .result-expression:hover {
 	color: inherit;
@@ -3446,6 +3462,9 @@ table.result tbody tr > td > pre.value-shortened:after {
 	white-space: pre-wrap;
 }
 
+#elResultset .message + .message {
+	margin-top: 0.5em;
+}
 #elResultset .message > .btn-close {
 	display: none;
 }
@@ -4289,6 +4308,22 @@ function executeQuery(sql, safeRows) {
 	return new Promise(function (resolve, reject) {
 			statement = parseSql(sql);
 			
+			if (config.showWarnings) {
+				sql = [];
+				for (var i = 0; i < statement.parsedExpressions.length; i++) {
+					sql.push(statement.parsedExpressions[i].join(''));
+					var temp = cleanParsedSql(statement.parsedExpressions[i]).join('').trim();
+					if (temp && !/^\s*show\s+warnings(?:\s*;)?\s*$/i.test(temp)) {
+						if (temp[temp.length - 1] !== ';') {
+							sql.push('\n;');
+						}
+						sql.push('\nshow warnings;\n');
+					}
+				}
+				sql = sql.join('');
+				statement = parseSql(sql);
+			}
+			
 			statement.analysis = {
 				thenRefreshBases: null,
 				thenRefreshTables: null,
@@ -4363,14 +4398,6 @@ function executeQuery(sql, safeRows) {
 			else if (statement.analysis.thenRefreshTables) {
 				refreshTables();
 			}
-			
-			if (elErrors.length > 0) {
-				elResultset.scrollTo(0, elErrors[0][1].offsetTop);
-			}
-			
-			if (rowCounts.length) {
-				// createMessage('Rows: ' + rowCounts.join(', '), 'executeQuery', true);
-			}
 		})
 		.finally(function () {
 			editor.setDisabled(false);
@@ -4382,21 +4409,26 @@ function executeQuery(sql, safeRows) {
 
 function showResultset(resultset, conf) {
 	conf = conf || {};
-	var rowCounts = [];
-	var elErrors = [];
 	for (var i = 0; i < resultset.length; i++) {
 		var result = resultset[i];
 		var tab = document.createElement('div');
+		var isWarnings = null;
+		var table = null;
+		
 		tab.__result = result;
 		tab.classList.add('tab');
 		var tabContents = document.createElement('div');
 		tabContents.classList.add('tab-contents');
 		tab.appendChild(tabContents);
 		if (result.error) {
-			elErrors.push(showError(result.error, tabContents));
+			showError(result.error, tabContents)
 		}
 		else {
 			if (result.parsedExpression) {
+				isWarnings = /^\s*show\s+warnings(?:\s*;)?\s*$/i.test(result.parsedExpression.join(''));
+			}
+			
+			if (result.parsedExpression && !isWarnings) {
 				var expression = document.createElement('div');
 				expression.classList.add('result-expression', 'click-show-value');
 				expression.dataset.title = "SQL Expression";
@@ -4404,14 +4436,24 @@ function showResultset(resultset, conf) {
 				expression.textContent = cleanParsedSql(result.parsedExpression).join('').replace(/[\r\n]+/g, ' ').trim();
 				tabContents.appendChild(expression);
 			}
-			var table = createTableFromResult(result);
-			rowCounts.push((result.rows ? result.rows.length : 0) + (result.safeCut ? '+' : ''));
+			
 			if (result.info) {
 				var info = document.createElement('div');
 				info.classList.add('result-info');
 				info.textContent = result.info.replace(/\s{2,}/g, '\t');
 				tabContents.appendChild(info);
 			}
+			
+			if (isWarnings) {
+				tab.classList.add('related-prev');
+				for (var j = 0; j < result.rows.length; j++) {
+					tabContents.appendChild(createMessage(result.rows[j][2], 'warning'));
+				}
+			}
+			else {
+				table = createTableFromResult(result);
+			}
+			
 			if (table) {
 				tabContents.appendChild(table);
 				
@@ -4436,14 +4478,18 @@ function showResultset(resultset, conf) {
 					});
 				}
 			}
-			else if (!result.info) {
+			else if (!isWarnings && !result.info) {
 				var empty = document.createElement('div');
 				empty.classList.add('result-empty');
 				empty.textContent = 'OK';
 				tabContents.appendChild(empty);
 			}
 		}
-		elResultset.appendChild(tab);
+		
+		if (tabContents.children.length > 0) {
+			elResultset.appendChild(tab);
+		}
+		
 		if (i === 0) {
 			elResultset.scrollTop = tab.offsetTop;
 		}
@@ -4915,6 +4961,7 @@ var config = new (function LocalConfig() {
 	this.enableLiveAutocompletion = true;
 	this.safeRows = 100;
 	this.iconColor = '';
+	this.showWarnings = true;
 	
 	for (var k in this) {
 		(function (k, defaultValue) {
