@@ -1492,6 +1492,8 @@ function AceEditorFacade(containerElement) {
 	this.ace.completers.push(this._completers.column);
 	this.ace.commands.bindKey({ win: "Ctrl-Shift-[", mac: "Command-Shift-[" }, "fold");
 	this.ace.commands.bindKey({ win: "Ctrl-Shift-]", mac: "Command-Shift-]" }, "unfold");
+	this.ace.commands.bindKey({ win: "Ctrl-Shift-Up", mac: "Command-Shift-Up" }, "movelinesup");
+	this.ace.commands.bindKey({ win: "Ctrl-Shift-Down", mac: "Command-Shift-Down" }, "movelinesdown");
 }
 
 elResultset.EM_1 = (function () {
