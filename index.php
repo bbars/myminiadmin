@@ -4586,9 +4586,6 @@ function createTableFromResult(result) {
 				var value = result.rows[y][x];
 				var td = document.createElement('td');
 				var type = result.fields[x].type;
-				if (value === null || (type === 'TIMESTAMP' && value === '')) {
-					td.className += ' type-NULL';
-				}
 				td.__value = value;
 				if (typeof value === 'string' && fieldName.slice(0, 3) === 'js:') {
 					type = 'js';
@@ -4611,19 +4608,24 @@ function createTableFromResult(result) {
 						td.appendChild(createDirElement(value));
 					}
 				}
-				else if (value && bigValuesRe.test(type)) {
-					var pre = document.createElement('pre');
-					if (value.length > (SHORTEN_LENGTH + 3)) {
-						value = value.substr(0, SHORTEN_LENGTH);
-						pre.className += ' value-shortened';
-					}
-					pre.textContent = value;
-					td.appendChild(pre);
-				}
 				else {
-					td.textContent = value;
+					if (value === null || (type === 'TIMESTAMP' && value === '')) {
+						td.classList.add('type-NULL');
+					}
+					if (value && bigValuesRe.test(type)) {
+						var pre = document.createElement('pre');
+						if (value.length > (SHORTEN_LENGTH + 3)) {
+							value = value.substr(0, SHORTEN_LENGTH);
+							pre.className = 'value-shortened';
+						}
+						pre.textContent = value;
+						td.appendChild(pre);
+					}
+					else {
+						td.textContent = value;
+					}
 				}
-				td.className = 'type-' + type;
+				td.classList.add('type-' + type);
 				td.dataset.type = type;
 				td.dataset.x = x;
 				td.dataset.y = y;
