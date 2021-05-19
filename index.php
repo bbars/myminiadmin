@@ -4561,19 +4561,36 @@ function createTableFromResult(result) {
 		for (; y < limY; y++) {
 			tr = document.createElement('tr');
 			for (var x = 0; x < fieldsCount; x++) {
+				var fieldName = result.fields[x].name;
 				var value = result.rows[y][x];
 				var td = document.createElement('td');
 				var type = result.fields[x].type;
-				td.className = 'type-' + type;
-				if (value === null || (type == 'TIMESTAMP' && value === '')) {
+				if (value === null || (type === 'TIMESTAMP' && value === '')) {
 					td.className += ' type-NULL';
 				}
-				td.dataset.type = type;
-				td.dataset.x = x;
-				td.dataset.y = y;
-				td.dataset.name = result.fields[x].name;
 				td.__value = value;
-				if (value && bigValuesRe.test(type)) {
+				if (typeof value === 'string' && fieldName.slice(0, 3) === 'js:') {
+					type = 'js';
+					try {
+						td.__value = createJsCellFunction(td.__value, x, y, result.fields, result.rows);
+						value = td.__value();
+					}
+					catch (err) {
+						value = err;
+					}
+					if (value instanceof HTMLCollection) {
+						for (var i = value.length - 1; i >= 0; i--) {
+							td.insertBefore(value[i]);
+						}
+					}
+					else if (value instanceof HTMLElement) {
+						td.appendChild(value);
+					}
+					else {
+						td.appendChild(createDirElement(value));
+					}
+				}
+				else if (value && bigValuesRe.test(type)) {
 					var pre = document.createElement('pre');
 					if (value.length > (SHORTEN_LENGTH + 3)) {
 						value = value.substr(0, SHORTEN_LENGTH);
@@ -4585,7 +4602,12 @@ function createTableFromResult(result) {
 				else {
 					td.textContent = value;
 				}
-				if (urlValueRe.test(td.__value)) {
+				td.className = 'type-' + type;
+				td.dataset.type = type;
+				td.dataset.x = x;
+				td.dataset.y = y;
+				td.dataset.name = fieldName;
+				if (typeof td.__value === 'string' && urlValueRe.test(td.__value)) {
 					var a = document.createElement('a');
 					a.className = 'value-link';
 					a.href = td.__value;
@@ -4616,6 +4638,28 @@ function createTableFromResult(result) {
 	table.appendChild(thead);
 	table.appendChild(tbody);
 	return table;
+}
+
+function Row(fields, row) {
+	var fieldMap = null;
+	this.get = function (fieldName) {
+		if (!fieldMap) {
+			fieldMap = {};
+			for (var i = fields.length - 1; i >= 0; i--) {
+				fieldMap[fields[i].name] = i;
+			}
+		}
+		if (typeof fieldMap[fieldName] === 'undefined') {
+			throw new Error("Unknown field: " + fieldName);
+		}
+		return row[fieldMap[fieldName]];
+	};
+}
+
+function createJsCellFunction(functionBody, x, y, fields, rows) {
+	return new Function('row, x, y, fields, rows', functionBody)
+		.bind(null, new Row(fields, rows[y]), x, y, fields, rows)
+	;
 }
 
 function remapColumn(table, columnIndex, columnName, mapper) {
