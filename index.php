@@ -2493,8 +2493,9 @@ function Tinychart(container) {
 	};
 	
 	this.findClosestX = function (value) {
-		if (!this.data.length)
+		if (!this.data.length) {
 			return -1;
+		}
 		var l = 0;
 		var r = this.data.length;
 		var i;
@@ -2530,25 +2531,28 @@ function Tinychart(container) {
 	
 	var capture = null;
 	function svgMousedownListener(event) {
+		event.preventDefault();
 		capture = {
 			cx: event.pageX,
 			originX: _originX,
 		};
 		_this.svg.classList.add('move');
-		return false;
 	}
 	function documentMouseupListener(event) {
 		capture = null;
 		_this.svg.classList.remove('move');
 	}
 	function documentMousemoveListener(event) {
-		if (!capture)
+		if (!capture) {
 			return;
+		}
 		var x = event.offsetX / _this.svg.clientWidth;
-		if (x < 0.03)
+		if (x < 0.03) {
 			x = 0;
-		else if (x > 0.97)
+		}
+		else if (x > 0.97) {
 			x = 1;
+		}
 		var dx = (capture.cx - event.pageX) / (_this.svg.clientWidth * _scaleX - _this.svg.clientWidth);
 		_this.scaleX(_scaleX, Math.max(0, Math.min((capture.originX + dx), 1)));
 	}
@@ -2561,38 +2565,55 @@ function Tinychart(container) {
 		}
 	}
 	function svgMousewheelListener(event) {
-		if (event.shiftKey) {
-			var dx = event.deltaY / (_this.svg.clientWidth * _scaleX - _this.svg.clientWidth);
-			_this.scaleX(_scaleX, Math.max(0, Math.min(_originX + dx, 1)));
-			return;
-		}
 		var x = event.offsetX / _this.svg.clientWidth;
-		var rx = _this.getRealX(x);
-		_this.hoverValue(rx);
-		if (x < 0.03)
-			rx = _this.getRealX(x = 0);
-		else if (x > 0.97)
-			rx = _this.getRealX(x = 1);
+		if (event.ctrlKey) {
+			// scale
+			event.preventDefault();
+			var rx = _this.getRealX(x);
+			_this.hoverValue(rx);
+			if (x < 0.03) {
+				rx = _this.getRealX(x = 0);
+			}
+			else if (x > 0.97) {
+				rx = _this.getRealX(x = 1);
+			}
+			
+			if (event.deltaY < 0) {
+				_this.scaleX(_scaleX * 1.2, rx);
+			}
+			else if (event.deltaY > 0) {
+				_this.scaleX(Math.max(1, _scaleX / 1.2), rx);
+			}
+		}
+		else {
+			// scroll
+			if (event.shiftKey) {
+				event.preventDefault();
+			}
+			var dx = event.deltaY / (_this.svg.clientWidth * _scaleX - _this.svg.clientWidth);
+			if (dx < 0 && _originX <= 0) {
+				return;
+			}
+			else if (dx > 0 && _originX >= 1) {
+				return;
+			}
+			event.preventDefault();
+			_this.scaleX(_scaleX, Math.max(0, Math.min(_originX + dx, 1)));
+		}
 		
-		if (event.deltaY < 0) {
-			_this.scaleX(_scaleX * 1.2, rx);
-		}
-		else if (event.deltaY > 0) {
-			_this.scaleX(Math.max(1, _scaleX / 1.2), rx);
-		}
 	}
 	
-	this.svg.addEventListener('mousedown', svgMousedownListener, {passive: true, capture: true});
-	document.addEventListener('mouseup', documentMouseupListener, {passive: true, capture: true});
-	document.addEventListener('mousemove', documentMousemoveListener, {passive: true, capture: true});
-	this.svg.addEventListener('mousemove', svgMousemoveListener, {passive: true, capture: true});
-	this.svg.addEventListener('mouseleave', svgMouseleaveListener, {passive: true, capture: true});
-	this.svg.addEventListener('mousewheel', svgMousewheelListener, {passive: true, capture: true});
+	this.svg.addEventListener('mousedown', svgMousedownListener, { passive: false, capture: true });
+	document.addEventListener('mouseup', documentMouseupListener, { passive: true, capture: true });
+	document.addEventListener('mousemove', documentMousemoveListener, { passive: true, capture: true });
+	this.svg.addEventListener('mousemove', svgMousemoveListener, { passive: true, capture: true });
+	this.svg.addEventListener('mouseleave', svgMouseleaveListener, { passive: true, capture: true });
+	this.svg.addEventListener('mousewheel', svgMousewheelListener, { passive: false, capture: true });
 	
 	this.remove = function () {
-		if (this.svg.parentElement)
+		if (this.svg.parentElement){
 			this.svg.parentElement.removeChild(this.svg);
-		
+		}
 		this.svg.removeEventListener('mousedown', svgMousedownListener, true);
 		document.removeEventListener('mouseup', documentMouseupListener, true);
 		document.removeEventListener('mousemove', documentMousemoveListener, true);
