@@ -4592,11 +4592,17 @@ function createTableFromResult(result) {
 				td.__value = value;
 				if (typeof value === 'string' && fieldName.slice(0, 3) === 'js:') {
 					type = 'js';
+					var scriptSource = value;
 					try {
-						td.__value = createJsCellFunction(td.__value, tr, td, x, y, result.fields, result.rows);
+						var func = createJsCellFunction(scriptSource, tr, td, x, y, result.fields, result.rows);
+						func.scriptSource = scriptSource;
+						td.__value = func;
+						result.rows[y][x] = func;
 						value = td.__value();
+						func.value = value;
 					}
 					catch (err) {
+						err.scriptSource = scriptSource;
 						value = err;
 					}
 					try {
@@ -5546,8 +5552,9 @@ Content-Type: text/html; charset="utf-8"
 		});
 		
 		elResultset.addEventListener('click', function (event) {
-			if (!event.target.classList.contains('btn-export'))
+			if (!event.target.classList.contains('btn-export')) {
 				return;
+			}
 			var result = event.target.__table.__result;
 			context.showExport(result);
 		});
@@ -5566,15 +5573,17 @@ Content-Type: text/html; charset="utf-8"
 				colName = '`' + backtickEscape(colName) + '`';
 				checkedColsNames.push(colName);
 				var table = result.fields[col].orgtable;
-				if (tables.indexOf(table) < 0)
+				if (tables.indexOf(table) < 0) {
 					tables.push(table);
+				}
 				return col;
 			});
 			var table = tables.length != 1 ? '??' : '`' + backtickEscape(tables[0]) + '`';
 			elExportResult.__tables = tables;
 			
-			if (!checkedCols.length)
+			if (!checkedCols.length) {
 				return;
+			}
 			
 			var lines = [];
 			var i, x, y, v, quoteValue;
@@ -5583,15 +5592,48 @@ Content-Type: text/html; charset="utf-8"
 				quoteValue = quotedCols[x];
 				for (y = 0; y < result.rows.length; y++) {
 					v = result.rows[y][x];
-					if (v === null)
+					if (typeof v === 'function') {
+						v = v.value;
+						var vt = typeof v;
+						if (vt === 'undefined' || v === null) {
+							v = null;
+						}
+						else if (vt === 'boolean') {
+							quoteValue = false;
+							v = v ? 'true' : 'false';
+						}
+						else if (vt === 'number') {
+							quoteValue = false;
+						}
+						else if (vt === 'string') {
+							quoteValue = true;
+						}
+						else if (v instanceof Node) {
+							quoteValue = true;
+							v = v.outerHTML || null;
+						}
+						else {
+							quoteValue = true;
+							try {
+								v = JSON.stringify(v);
+							}
+							catch (err) {
+								quoteValue = false;
+								v = null;
+							}
+						}
+					}
+					if (v === null) {
 						v = 'null';
+					}
 					else if (quoteValue) {
 						v = ('' + v).replace(/[\\"]/g, '$&$&');
 						v = v.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
 						v = '"' + v + '"';
 					}
-					if (!lines[y])
+					if (!lines[y]) {
 						lines[y] = [];
+					}
 					lines[y][i] = v;
 				}
 			}
