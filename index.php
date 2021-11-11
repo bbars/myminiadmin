@@ -1038,6 +1038,51 @@ var SERVER = <?= json_encode(array(
 	
 	</script>
 </div>
+<div id="elModalNewConnection" class="modal">
+	<span class="modal-close"></span>
+	<h2>Connection</h2>
+	<form id="elNewConnectionForm">
+		<div id="elNewConnectionSet">
+			<div class="m-b">
+				<label><b>User</b>@host:port</label>
+				<div>
+					<input type="text" name="userHostPort" placeholder="root@localhost:3306" />
+				</div>
+				<div class="m-t">
+					<small>
+						You may omit host and port
+					</small>
+				</div>
+			</div>
+			<div class="m-b">
+				<label>Password</label>
+				<div>
+					<input type="password" name="pass" placeholder="" />
+				</div>
+			</div>
+		</div>
+		<div class="m-t text-right">
+			<button type="submit">OK</button>
+		</div>
+	</form>
+	<style>
+	#elModalNewConnection > h2 {
+		margin-top: 0;
+	}
+	</style>
+	<script>
+	
+	const elModalNewConnection = document.getElementById('elModalNewConnection');
+	(function (elModalNewConnection) {
+		elModalNewConnection.addEventListener('modal-show', function (event) {
+			const form = elModalNewConnection.querySelector('form');
+			form && form.reset && form.reset();
+		});
+	})(elModalNewConnection);
+	
+	</script>
+</div>
+
 <div id="elModalPreferences" class="modal">
 	<h2 style="margin-top: 0">Preferences</h2>
 	<form id="elConfigForm">
@@ -1555,12 +1600,13 @@ elCreateConnection.addEventListener('click', function (event) {
 			refreshConnections(newConnectionId);
 			refreshStat();
 		})
-		.catch(function () {
+		.catch(function (err) {
+			showError(err, true);
 			if (!getSelectedConnectionId()) {
 				showError({
 					code: 'UNDEFINED_CONNECTION',
 					message: 'Create connection first',
-				});
+				}, true);
 			}
 		})
 	;
@@ -3019,6 +3065,7 @@ input[type=checkbox] {
 
 input[type=text],
 input[type=number],
+input[type=password],
 input[type=url],
 select,
 textarea {
@@ -3953,39 +4000,43 @@ function apiCall(fn, params) {
 	return xhr;
 }
 
-function promptConnection() {
-	var res = null;
-	var errors = [];
-	var s = '';
-	do {
-		s = prompt("Connection string\nlike user:password@host:port\n\nYou can omit any component, default is root:@localhost:3306)", s);
-		if (typeof s != 'string')
-			break;
-		var m = /^([^:@]*)(?::([^@]*))?(?:@([^:]*)(?::([^\/]+))?)?$/.exec(s);
-		errors = [];
-		if (!m)
-			errors.push('Please provide connection string in format:\nuser:password@host:port');
-		else {
-			res = {
-				user: m[1] || 'root',
-				pass: m[2] || '',
-				host: m[3] || 'localhost',
-				port: m[4] ? +m[4] : '',
+async function promptConnection() {
+	const values = await Modal.prompt(elModalNewConnection);
+	if (!values) {
+		return null;
+	}
+	try {
+		const userHostPort = values.get('userHostPort');
+		const pass = values.get('pass');
+		
+		const m = /^([^@]*)(?:@([^:]*)(?::([^\/]+))?)?$/.exec(userHostPort);
+		if (!m) {
+			throw {
+				code: 'INVALID_CONNECTION',
+				message: "Please provide a connection string in format:\nuser@host:port",
 			};
-			if (res.port && (isNaN(res.port) || res.port % 1 || res.port <= 0 || res.port > 65535))
-				errors.push('Port should be an integer between 1 and 65535');
 		}
-		if (errors.length) {
-			errors = errors.join('\n');
-			showError(errors);
-			alert(errors);
+		
+		const res = {
+			user: m[1] || 'root',
+			pass: pass || '',
+			host: m[2] || 'localhost',
+			port: m[3] || '3306',
+		};
+		
+		if (res.port && (isNaN(res.port) || res.port % 1 || res.port <= 0 || res.port > 65535)) {
+			throw {
+				code: 'INVALID_CONNECTION',
+				message: "Port should be an integer between 1 and 65535",
+			};
 		}
-		else {
-			return res;
-		}
-	} while (errors.length);
-	
-	return null;
+		
+		return res;
+	}
+	catch (err) {
+		showError(err, true);
+		throw err;
+	}
 }
 
 function promptCredentials() {
@@ -4066,33 +4117,19 @@ function refreshConnections(selectedConnection) {
 	});
 }
 
-function createNewConnection() {
-	return new Promise(function (resolve, reject) {
-		var newConnection = promptConnection();
-		if (!newConnection) {
-			reject({
-				message: 'Rejected',
-			});
-		}
-		else {
-			apiCall('saveConnection', newConnection).promise
-				.then(function (newConnectionId) {
-					refreshConnections(newConnectionId)
-						.then(function () {
-							return refreshBases(locationParams.get('base') || config.base);
-						})
-						.then(function () {
-							editor.focus();
-							return refreshTables();
-						})
-					;
-					return newConnectionId;
-				})
-				.then(resolve)
-				.catch(reject)
-			;
-		}
-	});
+async function createNewConnection() {
+	const newConnection = await promptConnection();
+	if (!newConnection) {
+		throw {
+			message: 'Rejected',
+		};
+	}
+	const newConnectionId = await apiCall('saveConnection', newConnection).promise;
+	await refreshConnections(newConnectionId);
+	await refreshBases(locationParams.get('base') || config.base);
+	editor.focus();
+	await refreshTables();
+	return newConnectionId;
 }
 
 function refreshBases(selectedBase) {
