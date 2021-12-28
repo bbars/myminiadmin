@@ -3907,19 +3907,24 @@ Content-Type: application/javascript; charset="utf-8"
 
 // <script>
 
-Promise.prototype.finally = function (cb) {
+Promise.prototype.finally = Promise.prototype.finally || function (cb) {
 	function fin() {
 		return Promise.resolve(cb()).then(function () { return this; });
 	}
 	return this.then(fin, fin);
 };
-Promise.prototype.done = function (cb) {
-	function done() {
-		cb(arguments[0]);
-		return arguments[0];
-	}
-	return this.then(function (data) { cb(data); return data; }, function (error) { cb(error); return Promise.reject(error) });
-};
+
+function randomNumstring(length) {
+	return new Array(length | 0)
+		.fill(0)
+		.map(function (v, i) {
+			const min = i > 0 ? 0 : 1;
+			const max = 10 - min;
+			return Math.round(Math.random() * max) % max + min;
+		})
+		.join('')
+	;
+}
 
 function setTitle(title) {
 	if (!document.__originalTitle) {
@@ -4398,7 +4403,10 @@ function executeQuery(sql, safeRows) {
 				if (!expr) {
 					continue;
 				}
-				if (/^(update|delete)\b(?![\s\S]*where)/i.test(expr)) {
+				if (/^[?\s]*(update|delete)\b(?![\s\S]*where)/i.test(expr)) {
+					statement.analysis.warnUnsafeOperation = true;
+				}
+				if (/^[?\s]*(drop)\b/i.test(expr)) {
 					statement.analysis.warnUnsafeOperation = true;
 				}
 				if (/\b(database)\b/i.test(expr)) {
@@ -4409,7 +4417,15 @@ function executeQuery(sql, safeRows) {
 				}
 			}
 			if (statement.analysis.warnUnsafeOperation) {
-				if (!confirm("Are you sure want to execute unsafe operations? (DELETE/UPDATE without WHERE)")) {
+				const code = randomNumstring(2);
+				const s = [
+					"DROP or DELETE/UPDATE without WHERE.",
+					"Are you sure want to execute unsafe operations?",
+					"Enter following code to confirm:",
+					"",
+					code,
+				].join('\n')
+				if (code !== prompt(s)) {
 					return reject(null);
 				}
 			}
