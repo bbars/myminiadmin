@@ -316,8 +316,9 @@ class Api {
 				$result['safeCut'] = $safeCut;
 				if ($encodeUtf8 && $binaryCols) {
 					foreach ($binaryCols as $i) {
-						foreach ($result['rows'] as &$row)
+						foreach ($result['rows'] as &$row) {
 							$row[$i] = self::utf8_encode($row[$i]);
+						}
 						unset($row);
 					}
 				}
@@ -783,7 +784,7 @@ if ($_GET['api']) {
 		setResponseCode(400);
 		$res = MyError::getErrorDescription($e);
 	}
-	$res = json_encode($res);
+	$res = json_encode($res, JSON_THROW_ON_ERROR);
 	header('Content-Length: ' . strlen($res));
 	die($res);
 }
