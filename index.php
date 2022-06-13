@@ -404,7 +404,7 @@ class Api {
 		if (!function_exists('shell_exec')) {
 			return null;
 		}
-		$res = @trim(shell_exec('git config --get remote.origin.url'));
+		$res = @trim(shell_exec('git config --get remote.origin.url') ?: '');
 		if (!$res) {
 			return null;
 		}
@@ -415,7 +415,7 @@ class Api {
 	}
 	
 	public static function getAppVersionCode() {
-		return !self::getAppGitUrl() ? null : @trim(shell_exec("git rev-parse --short HEAD 2>/dev/null || echo '0'"));
+		return !self::getAppGitUrl() ? null : @trim(shell_exec("git rev-parse --short HEAD 2>/dev/null || echo '0'") ?: '');
 	}
 	
 	public static function updateApp($dbCfg) {
